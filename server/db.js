@@ -106,6 +106,7 @@ export const DEFAULT_SETTINGS = {
   lowYieldThreshold: 3,
   examDate: null,
   pomodoro: { focus: 25, short: 5, long: 15, roundsBeforeLong: 4 },
+  reminder: { enabled: true, time: '10:00' },
 };
 
 export function openDb(path = process.env.DB_PATH || 'data/study.db') {

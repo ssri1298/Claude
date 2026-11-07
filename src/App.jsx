@@ -12,6 +12,7 @@ import CalendarView from './components/CalendarView.jsx';
 import Settings from './components/Settings.jsx';
 import CheckInModal from './components/CheckInModal.jsx';
 import PomodoroTimer from './components/PomodoroTimer.jsx';
+import { useDailyReminder } from './lib/useDailyReminder.js';
 
 const PAGES = {
   dashboard: Dashboard,
@@ -26,6 +27,7 @@ const PAGES = {
 
 export default function App() {
   const { page } = useApp();
+  useDailyReminder();
   const Page = PAGES[page] || Dashboard;
   return (
     <div className="relative z-10 flex min-h-screen">

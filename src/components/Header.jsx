@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Flame, Clock, Hourglass, Sun } from 'lucide-react';
+import { Flame, Clock, Hourglass, Sun, BellRing } from 'lucide-react';
+import { permission, requestPermission } from '../lib/reminder.js';
 import { useApp } from '../store.jsx';
 import { api } from '../api.js';
 import { Logo } from './Sidebar.jsx';
@@ -11,8 +12,15 @@ const greeting = () => {
 };
 
 export default function Header() {
-  const { version, today, setCheckInOpen } = useApp();
+  const { version, today, setCheckInOpen, settings, toast } = useApp();
   const [stats, setStats] = useState(null);
+  const [perm, setPerm] = useState(permission);
+  const enableReminder = async () => {
+    const p = await requestPermission();
+    setPerm(p);
+    if (p === 'granted') toast(`Daily reminder on — I’ll ask for your plan at ${settings?.reminder?.time || '10:00'}`);
+    else toast('Notifications blocked — allow them in your browser’s site settings', 'error');
+  };
   useEffect(() => {
     api.stats(7).then(setStats).catch(() => {});
   }, [version]);
@@ -47,6 +55,11 @@ export default function Header() {
             <Pill icon={Hourglass} color="text-violet-300" title={`Exam on ${stats.examDate}`}>
               <span className="font-display text-sm text-white">{Math.max(0, stats.daysToExam)}</span> days to exam
             </Pill>
+          )}
+          {settings?.reminder?.enabled && perm === 'default' && (
+            <button className="btn-ghost !py-2 text-xs" onClick={enableReminder} title="Allow notifications for the daily plan reminder">
+              <BellRing size={14} className="text-amber-300" /> Enable {settings.reminder.time} reminder
+            </button>
           )}
           {today?.checkInNeeded && (
             <button className="btn-primary !py-2 text-xs" onClick={() => setCheckInOpen(true)}>

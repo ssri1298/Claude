@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Download, FileUp, Save } from 'lucide-react';
+import { BellRing, Download, FileUp, Save } from 'lucide-react';
+import { permission, requestPermission, showPlanNotification } from '../lib/reminder.js';
 import { api } from '../api.js';
 import { useApp } from '../store.jsx';
 import { Card, SectionHeader } from './ui.jsx';
@@ -20,6 +21,7 @@ export default function Settings() {
   const { settings, toast, refresh } = useApp();
   const [s, setS] = useState(settings);
   const [table, setTable] = useState(null);
+  const [perm, setPerm] = useState(permission);
   const fileRef = useRef();
   useEffect(() => setS(settings), [settings]);
   useEffect(() => {
@@ -27,6 +29,7 @@ export default function Settings() {
   }, []);
   if (!s) return null;
   const set = (k, v) => setS((p) => ({ ...p, [k]: v }));
+  const setR = (k, v) => setS((p) => ({ ...p, reminder: { ...p.reminder, [k]: v } }));
   const setP = (k, v) => setS((p) => ({ ...p, pomodoro: { ...p.pomodoro, [k]: v } }));
 
   const save = async () => {
@@ -84,6 +87,27 @@ export default function Settings() {
           </Field>
         </Card>
         <div className="space-y-5">
+          <Card className="space-y-4 p-5 sm:p-6">
+            <div className="label flex items-center gap-1.5"><BellRing size={12} /> Daily plan reminder</div>
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-sm text-slate-200">Ask for my plan every day</span>
+              <input type="checkbox" className="h-5 w-5 accent-violet-500" checked={!!s.reminder?.enabled} onChange={(e) => setR('enabled', e.target.checked)} />
+            </label>
+            <Field label="Reminder time">
+              <input type="time" className="input" value={s.reminder?.time || '10:00'} onChange={(e) => setR('time', e.target.value || '10:00')} />
+            </Field>
+            <p className="text-xs text-slate-500">
+              Browser notification status: <span className={perm === 'granted' ? 'text-emerald-300' : 'text-amber-300'}>{perm}</span>. The reminder fires while Scalpel is open in a tab (it can be in the background). It’s skipped once today’s plan is finalized.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {perm !== 'granted' && perm !== 'unsupported' && (
+                <button className="btn-ghost" onClick={async () => setPerm(await requestPermission())}><BellRing size={15} /> Allow notifications</button>
+              )}
+              {perm === 'granted' && (
+                <button className="btn-ghost" onClick={() => showPlanNotification('Test reminder — this is how your daily plan prompt will look.')}><BellRing size={15} /> Send test notification</button>
+              )}
+            </div>
+          </Card>
           <Card className="space-y-5 p-5 sm:p-6">
             <div className="label">Pomodoro</div>
             <div className="grid grid-cols-2 gap-4">

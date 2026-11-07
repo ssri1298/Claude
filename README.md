@@ -10,6 +10,7 @@ A premium dark-mode study assistant that turns your video-lesson screenshots int
 - **To-do list** — finalized plans become a checklist. Recall items open an active-recall card (write from memory → rate Blank/Hard/Good/Easy) that drives SM-2-style scheduling (1 → 3 → 7 → ×ease days). When everything is ticked, choose **Add more topics** or **Continue revision**.
 - **Calendar** — time-blocked day timeline with breaks, monthly heat-map of study minutes, logged Pomodoro sessions.
 - **Dashboard** — daily surgical motivational quote, study-time area chart (new vs recall, 14/30 days), topics-per-week chart, topic-status donut, per-subject progress, streak, exam countdown, agent activity feed.
+- **Daily 10 am plan reminder** — a browser notification ("How much time do you have for study today?") fires once a day at 10:00 (time configurable in Settings) and opens the morning check-in. Skipped if today's plan is already finalized. Click **Enable 10:00 reminder** in the header once to allow notifications. Scalpel must be open in a browser tab (background is fine).
 - **Pomodoro timer** — floating dock on every page; link it to a to-do, focus minutes are logged to the calendar and the dashboard graph; offers to tick the to-do when the block ends.
 
 ## Agent architecture
