@@ -10,6 +10,7 @@ const CHUNK = 60000; // characters per stored document (well under the 256 KiB d
 const TAB = Math.random().toString(36).slice(2);
 
 let ready = null;
+let cloudDb = null; // the website database, when available (used for Claude's inbox)
 const statusListeners = new Set();
 let status = { mode: 'loading', saving: false, error: null };
 const setStatus = (patch) => {
@@ -103,6 +104,7 @@ async function init() {
     if (c?.use) {
       const [db, user] = await Promise.all([c.use('db'), c.use('user')]);
       const uid = db && user ? await user.id() : null;
+      if (db) cloudDb = db;
       if (db && uid) {
         adapter = cloudAdapter(db, uid);
         mode = 'cloud';
@@ -181,6 +183,26 @@ async function init() {
 
   setStatus({ mode });
   return { routes };
+}
+
+/**
+ * Claude's inbox: topic batches Claude prepared (e.g. from screenshots sent in chat), stored in
+ * the shared `inbox` collection of this private page. Each doc: {title, createdAt, topics:[...]}.
+ */
+export async function listInbox() {
+  await backend();
+  if (!cloudDb) return [];
+  try {
+    const snap = await withTimeout(cloudDb.collection('inbox').get(), 10000);
+    return snap.docs.filter((d) => d.exists && Array.isArray(d.data()?.topics)).map((d) => ({ inboxId: d.id, ...d.data() }));
+  } catch {
+    return [];
+  }
+}
+
+export async function deleteInbox(id) {
+  if (!cloudDb) return;
+  await cloudDb.collection('inbox').doc(id).delete().catch(() => {});
 }
 
 export function backend() {

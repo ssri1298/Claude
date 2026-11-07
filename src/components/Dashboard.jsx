@@ -5,6 +5,7 @@ import { api } from '../api.js';
 import { useApp } from '../store.jsx';
 import QuoteCard from './QuoteCard.jsx';
 import WelcomeCard from './WelcomeCard.jsx';
+import InboxBanner from './InboxBanner.jsx';
 import AgentFeed from './AgentFeed.jsx';
 import { StatusDonut, StudyTimeChart, SubjectBars, TopicsWeeklyChart } from './StudyCharts.jsx';
 import { Card, ProgressRing, Segmented, Skeleton, YieldBadge, fmtMin } from './ui.jsx';
@@ -46,6 +47,8 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <InboxBanner />
+
       <motion.div {...fade(0)}>
         <QuoteCard />
       </motion.div>

@@ -56,45 +56,103 @@ export function cleanTitle(s) {
 
 const letters = (s) => (s.match(/[a-z]/gi) || []).length;
 
-/** Parse OCR text into lesson rows. */
-export function parseLessons(text) {
-  const lines = String(text)
-    .split(/\r?\n/)
-    .map((l) => l.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-  const out = [];
-  let pending = []; // candidate title lines waiting for a duration
+// Course-app chrome that is never a lesson title: filter tabs, status words, badges.
+const UI_WORDS = new Set(['all', 'paused', 'completed', 'complete', 'unattempted', 'attempted', 'in', 'progress', 'not', 'started', 'watched', 'resume', 'continue', 'pro', 'free', 'new', 'locked']);
+const TAB_WORDS = new Set(['all', 'paused', 'completed', 'unattempted', 'attempted', 'ongoing', 'bookmarked', 'downloaded']);
+function isChrome(raw, cleaned) {
+  const words = raw.toLowerCase().match(/[a-z]+/g) || [];
+  if (words.length && words.every((w) => UI_WORDS.has(w) || w.length < 2)) return true;
+  // Filter-tab bars survive OCR only partly ("( All . iscd Completed Unattempted").
+  if (words.filter((w) => TAB_WORDS.has(w)).length >= 2) return true;
+  // ALL-CAPS line without a duration: a section heading or a badge such as PRO.
+  if (letters(raw) >= 2 && !/[a-z]/.test(raw)) return true;
+  return letters(cleaned) < 3;
+}
 
-  for (const line of lines) {
-    const durs = findDurations(line);
-    if (!durs.length) {
-      const c = cleanTitle(line);
-      if (letters(c) >= 3) pending.push(c);
-      if (pending.length > 3) pending.shift();
+// OCR often reads Roman numerals I / II / III as "|", "l", "ll" or "li". Fix them when they
+// stand alone at the end of a title or before ":" / ")".
+export function fixRomanNumerals(s) {
+  return String(s).replace(/(^|[\s:(\-–])([|lI]{1,3}|li|Il|lI)(?=\s*(?:$|[:)\-–,]))/g, (_, pre, tok) => pre + 'I'.repeat(tok.length));
+}
+
+/**
+ * Parse OCR text into lesson rows: [{ title, duration_min }].
+ * Tesseract separates blocks with blank lines, so a title is the paragraph of text just before
+ * (or on the same line as) its duration. Multi-line titles are joined; ratings, badges, filter
+ * tabs and section headings are ignored.
+ */
+const UNFINISHED = /(?:[(&\-–:,/]|\b(?:and|of|or|the|with|in|to|&))\s*$/i;
+const openParen = (s) => (s.match(/\(/g) || []).length > (s.match(/\)/g) || []).length;
+
+export function parseLessons(text, { ignore = [] } = {}) {
+  const ignored = new Set(ignore.map((t) => t.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  const out = [];
+  let para = []; // title lines in the current paragraph
+  let prev = []; // title lines of the previous paragraph (if no duration has claimed them)
+
+  for (const rawLine of String(text).split(/\r?\n/)) {
+    const line = rawLine.replace(/\s+/g, ' ').trim();
+    if (!line) {
+      if (para.length) {
+        // Keep an unfinished title together with its continuation: "Plastic Surgery (MCQ" + "Discussion)".
+        const joins = prev.length && (openParen(prev.join(' ')) || UNFINISHED.test(prev[prev.length - 1]));
+        prev = joins ? [...prev, ...para] : para;
+        para = [];
+      }
       continue;
     }
-    // Strip durations out of the line to see what's left as a title
+    const durs = findDurations(line);
+    if (!durs.length) {
+      const c = cleanTitle(fixRomanNumerals(line));
+      if (!isChrome(line, c) && !ignored.has(c.toLowerCase().replace(/[^a-z0-9]/g, ''))) para.push(c);
+      continue;
+    }
+    // Strip durations (and a leading star rating like "★ 4.6 |") to see what's left as a title.
     let rest = line;
     for (const d of [...durs].reverse()) rest = rest.slice(0, d.index) + ' ' + rest.slice(d.index + d.length);
-    let title = cleanTitle(rest);
-    if (letters(title) < 4 && pending.length) {
-      // Duration sits on its own line — title is the line(s) above.
-      let last = pending.pop();
-      if (pending.length && /^[a-z(&]/.test(last)) last = `${pending.pop()} ${last}`;
-      title = last;
+    rest = rest.replace(/\b\d(?:[.,]\d)?\s*\|?\s*$/, ' ');
+    let title = cleanTitle(fixRomanNumerals(rest));
+    if (letters(title) < 4) {
+      let lines = para.length ? para : prev;
+      // A title split across two blocks: "Plastic Surgery (MCQ" … "Discussion)".
+      if (para.length && prev.length && (openParen(prev.join(' ')) || UNFINISHED.test(prev[prev.length - 1]))) lines = [...prev, ...para];
+      lines = lines.slice(-3);
+      title = lines.join(' ').replace(/\s+([:)])/g, '$1').replace(/\s{2,}/g, ' ').trim();
     }
-    pending = [];
+    para = [];
+    prev = [];
     if (letters(title) < 3) continue;
     const minutes = Math.ceil(Math.max(...durs.map((d) => d.minutes)));
     out.push({ title, duration_min: minutes });
   }
 
-  // De-duplicate (screenshots often overlap when scrolling)
+  // De-duplicate overlapping screenshots: same title AND same length. ("Part II" and a misread
+  // "Part III" can share a title, so the duration keeps them apart.)
   const seen = new Set();
   return out.filter((r) => {
-    const k = r.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const k = r.title.toLowerCase().replace(/[^a-z0-9]/g, '') + '|' + r.duration_min;
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
   });
+}
+
+/**
+ * The page header (e.g. the course name) repeats at the top of every screenshot of a list.
+ * Returns title-like lines that open at least two of the given OCR texts, to pass as `ignore`.
+ */
+export function detectHeaders(texts) {
+  const counts = new Map();
+  for (const text of texts) {
+    const firsts = new Set();
+    for (const raw of String(text).split(/\r?\n/).slice(0, 12)) {
+      const line = raw.replace(/\s+/g, ' ').trim();
+      if (!line || findDurations(line).length) continue;
+      const c = cleanTitle(line);
+      if (!isChrome(line, c)) firsts.add(c);
+    }
+    for (const c of firsts) counts.set(c, (counts.get(c) || 0) + 1);
+  }
+  const min = Math.max(2, Math.ceil(texts.length / 2));
+  return [...counts].filter(([, n]) => n >= min).map(([c]) => c);
 }

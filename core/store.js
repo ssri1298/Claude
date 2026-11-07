@@ -11,7 +11,7 @@ export function nowStamp(d = new Date()) {
 
 const DEFAULTS = {
   topics: () => ({
-    subject: null, duration_min: 0, source: 'manual', order_idx: 0, status: 'pending', yield_area: null, yield_weight: 4,
+    subject: null, section: null, duration_min: 0, source: 'manual', order_idx: 0, status: 'pending', yield_area: null, yield_weight: 4,
     yield_override: null, skip_dismissed: 0, carryover: 0, ease: 2.5, interval_days: 0, repetitions: 0, next_review: null,
     last_reviewed: null, completed_at: null, created_at: nowStamp(),
   }),

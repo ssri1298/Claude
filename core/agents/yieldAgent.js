@@ -28,26 +28,38 @@ export function dice(a, b) {
   return (2 * n) / (A.size + B.size);
 }
 
-/** Classify a video title against the NEET SS Surgical frequency table. */
-export function classify(title) {
+const UNCLASSIFIED = { area: 'Unclassified', subject: 'General', weight: 4, score: 0 };
+
+function classifyText(title) {
   const t = norm(title);
   let best = null;
   for (const a of COMPILED) {
     let score = 0;
     for (const k of a.rx) if (k.re.test(t)) score += k.len;
+    if (score > 0 && a.priority) return { area: a.area, subject: a.subject, weight: a.weight, score };
     if (score > 0 && (!best || score > best.score || (score === best.score && a.weight > best.weight))) {
       best = { area: a.area, subject: a.subject, weight: a.weight, score };
     }
   }
   if (best) return best;
-  // Fuzzy fallback on area names
+  // Fuzzy fallback on area names, only for close matches
   let fz = null;
   for (const a of TABLE.areas) {
     const d = dice(title, a.area);
-    if (d > 0.45 && (!fz || d > fz.d)) fz = { area: a.area, subject: a.subject, weight: a.weight, d };
+    if (d > 0.6 && (!fz || d > fz.d)) fz = { area: a.area, subject: a.subject, weight: a.weight, d };
   }
   if (fz) return { area: fz.area, subject: fz.subject, weight: fz.weight, score: 0 };
-  return { area: 'Unclassified', subject: 'General', weight: 4, score: 0 };
+  return UNCLASSIFIED;
+}
+
+/**
+ * Classify a video title against the NEET SS Surgical frequency table. `hint` (e.g. the course
+ * section the video sits under) is used only when the title alone can't be placed.
+ */
+export function classify(title, hint) {
+  const c = classifyText(title);
+  if (c !== UNCLASSIFIED || !hint) return c;
+  return classifyText(hint);
 }
 
 export const effectiveWeight = (t) => (t.yield_override ?? t.yield_weight);
@@ -97,7 +109,7 @@ export class YieldAgent {
   handle({ type, payload }) {
     switch (type) {
       case 'yield.classify':
-        return classify(payload.title);
+        return classify(payload.title, payload.hint);
       case 'yield.table':
         return TABLE;
       case 'yield.rank': {

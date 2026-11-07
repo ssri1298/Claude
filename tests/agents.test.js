@@ -180,3 +180,24 @@ test('store transactions roll back on error', () => {
   assert.equal(s.count('topics'), 1);
   assert.equal(s.insert('topics', { title: 'C' }), 2);
 });
+
+test('import: already-watched videos go to revision, duplicates are skipped, section helps classify', () => {
+  day = '2026-11-07';
+  const { agent, db } = mk();
+  const r1 = agent.importTopics([
+    { title: 'Benign Pancreatic Conditions', duration_min: 84, status: 'done', section: 'Gastrointestinal' },
+    { title: 'GIT Part I', duration_min: 35, section: 'Recent Updates - Bailey 28th Edition' },
+    { title: 'Spleen', duration_min: 39 },
+  ]);
+  assert.equal(r1.ids.length, 3);
+  const [pan, git] = db.all('topics');
+  assert.equal(pan.status, 'done');
+  assert.equal(pan.next_review, '2026-11-08');
+  assert.equal(git.yield_area, 'Textbook updates & important tables');
+  assert.equal(git.section, 'Recent Updates - Bailey 28th Edition');
+  const r2 = agent.importTopics([{ title: 'spleen', duration_min: 39 }, { title: 'Hernia I', duration_min: 85 }]);
+  assert.deepEqual(r2.skipped, ['spleen']);
+  assert.equal(r2.ids.length, 1);
+  day = '2026-11-08';
+  assert.equal(agent.revisionQueue().filter((t) => t.due).length, 1);
+});

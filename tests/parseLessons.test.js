@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDuration, parseLessons, cleanTitle } from '../src/lib/parseLessons.js';
+import { parseDuration, parseLessons, cleanTitle, detectHeaders } from '../src/lib/parseLessons.js';
 
 test('parseDuration handles common formats', () => {
   assert.equal(parseDuration('1:05:30'), 66);
@@ -47,4 +47,50 @@ test('parseLessons — progress "watched / total" keeps the total, dedupes overl
 test('cleanTitle strips numbering and badges', () => {
   assert.equal(cleanTitle('Lecture 12: Gastric Cancer  Completed'), 'Gastric Cancer');
   assert.equal(cleanTitle('07) Wilms Tumour •'), 'Wilms Tumour');
+});
+
+// Real Tesseract output from a course app's video list (light theme, rating + duration line).
+const REAL = `£                  General Surgery SS
+
+( All . iscd         Completed         Unattempted
+
+Trauma and Burns: MCQ
+Discussion |
+
+% 46 51Min
+
+Breast : ll
+w 47 71Min
+
+Plastic Surgery (MCQ
+
+78              Discussion)
+
+% 46 31Min
+
+PRO
+
+IMPORTANT TABLES
+
+Sabiston Important Tables : li
+45 20 Min`;
+
+test('parseLessons — real course-app OCR: multi-line titles, roman numerals, ratings, chrome', () => {
+  const r = parseLessons(REAL, { ignore: ['General Surgery SS'] });
+  assert.deepEqual(r, [
+    { title: 'Trauma and Burns: MCQ Discussion I', duration_min: 51 },
+    { title: 'Breast: II', duration_min: 71 },
+    { title: 'Plastic Surgery (MCQ Discussion)', duration_min: 31 },
+    { title: 'Sabiston Important Tables: II', duration_min: 20 },
+  ]);
+});
+
+test('detectHeaders finds the page title repeated across screenshots', () => {
+  const a = 'General Surgery SS\n\nAll Paused Completed\n\nLiver I\n4.7 67 Min';
+  const b = 'General Surgery SS\n\nSpleen\n4.6 39 Min';
+  assert.deepEqual(detectHeaders([a, b]), ['General Surgery SS']);
+});
+
+test('same title with different lengths is kept (Part II vs misread Part III)', () => {
+  assert.equal(parseLessons('Breast : ll\n4.7 71 Min\n\nBreast : ll\n4.7 60 Min').length, 2);
 });

@@ -1,4 +1,5 @@
 // NEET SS Surgical topic areas with estimated past-exam frequency weights (1-10).
+// An area with "priority" wins whenever one of its keywords matches (used for textbook-update videos).
 export default {
  "exam": "NEET SS — Surgical group",
  "note": "Frequency weights (1–10) are editorial estimates of how often an area appears in past NEET SS Surgical papers. Override them in the app with your own past-paper analysis.",
@@ -78,7 +79,9 @@ export default {
     "liver metastas",
     "hepatectomy",
     "liver resection",
-    "bclc"
+    "bclc",
+    "liver",
+    "hepatic"
    ]
   },
   {
@@ -146,7 +149,8 @@ export default {
     "chronic pancreatitis",
     "frey",
     "puestow",
-    "beger"
+    "beger",
+    "benign pancrea"
    ]
   },
   {
@@ -161,7 +165,10 @@ export default {
     "whipple",
     "pancreaticoduodenectomy",
     "ampulla",
-    "pancreatic adenocarcinoma"
+    "pancreatic adenocarcinoma",
+    "malignant pancrea",
+    "pancreatic tumour",
+    "pancreatic tumor"
    ]
   },
   {
@@ -221,7 +228,11 @@ export default {
     "esophagectomy",
     "oesophagectomy",
     "ivor lewis",
-    "mckeown"
+    "mckeown",
+    "esophagus",
+    "oesophagus",
+    "esophageal",
+    "oesophageal"
    ]
   },
   {
@@ -261,7 +272,8 @@ export default {
     "ca stomach",
     "gastrectomy",
     "d2 lymph",
-    "linitis"
+    "linitis",
+    "stomach"
    ]
   },
   {
@@ -299,7 +311,10 @@ export default {
     "haematemesis",
     "forrest",
     "mallory weiss",
-    "dieulafoy"
+    "dieulafoy",
+    "upper gi",
+    "gi hemorrhage",
+    "gi haemorrhage"
    ]
   },
   {
@@ -313,7 +328,8 @@ export default {
     "sigmoid volvulus",
     "adhesive",
     "pseudo obstruction",
-    "ogilvie"
+    "ogilvie",
+    "bowel"
    ]
   },
   {
@@ -407,7 +423,10 @@ export default {
     "anal fistula",
     "perianal abscess",
     "goodsall",
-    "seton"
+    "seton",
+    "rectum",
+    "anal canal",
+    "anorectal"
    ]
   },
   {
@@ -418,7 +437,6 @@ export default {
     "rectal prolapse",
     "pilonidal",
     "anal cancer",
-    "anal canal",
     "delorme",
     "altemeier"
    ]
@@ -471,7 +489,8 @@ export default {
     "tep",
     "tapp",
     "hernioplasty",
-    "herniorrhaphy"
+    "herniorrhaphy",
+    "inguinoscrotal"
    ]
   },
   {
@@ -511,7 +530,10 @@ export default {
     "acute abdomen",
     "pseudomyxoma",
     "hipec",
-    "intra-abdominal abscess"
+    "intra-abdominal abscess",
+    "abdominal lump",
+    "abdominal mass",
+    "abdominal emergenc"
    ]
   },
   {
@@ -531,7 +553,8 @@ export default {
     "triple negative",
     "dcis",
     "lcis",
-    "inflammatory breast"
+    "inflammatory breast",
+    "breast"
    ]
   },
   {
@@ -587,7 +610,9 @@ export default {
     "thyroid nodule",
     "bethesda",
     "thyroidectomy",
-    "tirads"
+    "tirads",
+    "thyroid",
+    "endocrine surgery"
    ]
   },
   {
@@ -657,7 +682,8 @@ export default {
     "carcinoma tongue",
     "buccal mucosa",
     "leukoplakia",
-    "oral submucous"
+    "oral submucous",
+    "oral"
    ]
   },
   {
@@ -686,7 +712,8 @@ export default {
     "branchial",
     "thyroglossal",
     "cystic hygroma",
-    "neck node"
+    "neck node",
+    "head and neck"
    ]
   },
   {
@@ -925,7 +952,8 @@ export default {
     "minimal access",
     "pneumoperitoneum",
     "robotic",
-    "mis "
+    "mis ",
+    "minimally invasive"
    ]
   },
   {
@@ -984,7 +1012,8 @@ export default {
     "squamous cell carcinoma skin",
     "marjolin",
     "skin cancer",
-    "skin tumour"
+    "skin tumour",
+    "skin tumor"
    ]
   },
   {
@@ -1029,7 +1058,9 @@ export default {
     "abi",
     "diabetic foot",
     "gangrene",
-    "amputation"
+    "amputation",
+    "arterial",
+    "vascular"
    ]
   },
   {
@@ -1105,7 +1136,8 @@ export default {
     "calculus",
     "pcnl",
     "ureteroscopy",
-    "eswl"
+    "eswl",
+    "urology"
    ]
   },
   {
@@ -1118,7 +1150,9 @@ export default {
     "kidney cancer",
     "renal mass",
     "nephrectomy",
-    "wilms adult"
+    "wilms adult",
+    "kidney",
+    "renal"
    ]
   },
   {
@@ -1130,7 +1164,8 @@ export default {
     "carcinoma bladder",
     "urothelial",
     "turbt",
-    "cystectomy"
+    "cystectomy",
+    "bladder"
    ]
   },
   {
@@ -1160,14 +1195,18 @@ export default {
    ]
   },
   {
-   "area": "Urological trauma",
+   "area": "Urethra, penis & urological trauma",
    "subject": "Urology",
    "weight": 5,
    "keywords": [
     "urethral injury",
     "bladder injury",
     "renal trauma",
-    "urethral stricture"
+    "urethral stricture",
+    "urethra",
+    "urethral",
+    "penile",
+    "penis"
    ]
   },
   {
@@ -1194,7 +1233,9 @@ export default {
     "omphalocele",
     "duodenal atresia",
     "nec",
-    "necrotizing enterocolitis"
+    "necrotizing enterocolitis",
+    "paediatric surgery",
+    "pediatric surgery"
    ]
   },
   {
@@ -1255,7 +1296,8 @@ export default {
     "bronchogenic",
     "pulmonary nodule",
     "lobectomy",
-    "pancoast"
+    "pancoast",
+    "thorax"
    ]
   },
   {
@@ -1305,7 +1347,9 @@ export default {
     "glioma",
     "meningioma",
     "pituitary",
-    "spinal tumour"
+    "spinal tumour",
+    "neurosurgery",
+    "neurosurgical"
    ]
   },
   {
@@ -1356,6 +1400,22 @@ export default {
     "brain death",
     "organ donation",
     "hla"
+   ]
+  },
+  {
+   "area": "Textbook updates & important tables",
+   "subject": "Updates & Tables",
+   "weight": 8,
+   "priority": true,
+   "keywords": [
+    "update",
+    "updates",
+    "bailey",
+    "sabiston",
+    "28e",
+    "28th edition",
+    "important tables",
+    "first 5 chapters"
    ]
   }
  ]

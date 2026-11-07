@@ -94,7 +94,8 @@ export default function LibraryPage() {
                     <span className={`chip ${STATUS_CLS[t.status]}`}>{t.status}</span>
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
-                    <span>{t.subject}</span>·<span>{t.yield_area}</span>·<span>{fmtMin(t.duration_min)}</span>
+                    {t.section && <><span className="text-slate-400">{t.section}</span>·</>}
+                    <span>{t.yield_area}</span>·<span>{fmtMin(t.duration_min)}</span>
                     {t.next_review && t.status === 'done' && <span>· next recall {t.next_review}</span>}
                   </div>
                 </div>

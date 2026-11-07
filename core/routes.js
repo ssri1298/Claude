@@ -31,7 +31,7 @@ export function createRoutes(agent) {
 
   // ── Topics ──
   on('GET', '/topics', () => s.all('topics').sort((a, b) => a.order_idx - b.order_idx || a.id - b.id).map(weightOf));
-  on('POST', '/topics/bulk', ({ body }) => ({ ids: agent.importTopics(body.topics || []) }));
+  on('POST', '/topics/bulk', ({ body }) => agent.importTopics(body.topics || []));
   on('PATCH', '/topics/:id', ({ params, body }) => {
     const allowed = ['title', 'subject', 'duration_min', 'yield_override', 'skip_dismissed', 'order_idx'];
     const patch = Object.fromEntries(Object.entries(body || {}).filter(([k]) => allowed.includes(k)));

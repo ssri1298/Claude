@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CheckCircle2, FileText, ImageUp, Plus, ScanText, Trash2, Upload, Loader2 } from 'lucide-react';
-import { api } from '../api.js';
+import { CheckCircle2, FileText, ImageUp, Plus, ScanText, Trash2, Upload, Loader2, Sparkles } from 'lucide-react';
+import { api, IS_WEB } from '../api.js';
+import { takePrefill } from '../lib/prefill.js';
+import InboxBanner from './InboxBanner.jsx';
 import { useApp } from '../store.jsx';
-import { parseLessons, parseDuration } from '../lib/parseLessons.js';
+import { parseLessons, parseDuration, detectHeaders } from '../lib/parseLessons.js';
 import { Card, SectionHeader, fmtMin } from './ui.jsx';
 
 let uid = 0;
-const newRow = (r) => ({ key: ++uid, include: true, title: '', duration_min: 0, ...r });
+const newRow = (r) => ({ key: ++uid, include: true, title: '', duration_min: 0, done: false, section: null, ...r });
+const rowKey = (r) => r.title.toLowerCase().replace(/[^a-z0-9]/g, '') + '|' + (Number(r.duration_min) || 0);
 
 export default function ImportScreenshots() {
   const { toast, navigate, refresh } = useApp();
@@ -19,12 +22,32 @@ export default function ImportScreenshots() {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef();
   const queue = useRef(Promise.resolve());
+  const texts = useRef([]);
+  const [batch, setBatch] = useState(null); // a batch Claude prepared (from the inbox)
+  const [samples, setSamples] = useState([]);
+  const [removeSamples, setRemoveSamples] = useState(true);
 
-  const mergeRows = (parsed) =>
+  useEffect(() => {
+    const load = () => {
+      const b = takePrefill();
+      if (!b) return;
+      setBatch(b);
+      setRows(b.topics.map((t) => newRow({ title: t.title, duration_min: t.duration_min, section: t.section || null, done: t.status === 'done', source: 'claude' })));
+      api.topics().then((all) => setSamples(all.filter((t) => t.source === 'sample'))).catch(() => {});
+    };
+    load();
+    window.addEventListener('scalpel:prefill', load);
+    return () => window.removeEventListener('scalpel:prefill', load);
+  }, []);
+
+  // Merge rows from one screenshot; overlapping screenshots repeat rows (same title and length).
+  const mergeRows = (parsed, headers = []) =>
     setRows((prev) => {
-      const seen = new Set(prev.map((r) => r.title.toLowerCase().replace(/[^a-z0-9]/g, '')));
-      const add = parsed.filter((p) => !seen.has(p.title.toLowerCase().replace(/[^a-z0-9]/g, '')));
-      return [...prev, ...add.map((p) => newRow({ ...p, source: 'ocr' }))];
+      const hdr = new Set(headers.map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, '')));
+      const kept = prev.filter((r) => !(r.source === 'ocr' && hdr.has(r.title.toLowerCase().replace(/[^a-z0-9]/g, ''))));
+      const seen = new Set(kept.map(rowKey));
+      const add = parsed.filter((p) => !seen.has(rowKey(p)));
+      return [...kept, ...add.map((p) => newRow({ ...p, source: 'ocr' }))];
     });
 
   const addFiles = useCallback((files) => {
@@ -38,9 +61,12 @@ export default function ImportScreenshots() {
         try {
           const { recognize } = await import('../lib/ocr.js');
           const text = await recognize(it.file, (progress, status) => upd({ progress, status }));
-          const parsed = parseLessons(text);
+          texts.current.push(text);
+          // The page title (e.g. the course name) repeats on every screenshot: ignore it.
+          const headers = detectHeaders(texts.current);
+          const parsed = parseLessons(text, { ignore: headers });
           upd({ text, status: 'Done', progress: 1, count: parsed.length });
-          mergeRows(parsed);
+          mergeRows(parsed, headers);
         } catch (e) {
           console.error(e);
           upd({ status: 'Failed: ' + e.message, progress: 1, count: 0 });
@@ -65,10 +91,24 @@ export default function ImportScreenshots() {
   const doImport = async () => {
     setBusy(true);
     try {
-      const r = await api.importTopics(included.map((x) => ({ title: x.title, duration_min: Number(x.duration_min) || 0, source: x.source || 'manual' })));
-      toast(`${r.ids.length} topics imported and scored for exam yield`);
+      const r = await api.importTopics(
+        included.map((x) => ({ title: x.title, duration_min: Number(x.duration_min) || 0, section: x.section || undefined, status: x.done ? 'done' : undefined, source: x.source || 'manual' })),
+      );
+      if (batch && removeSamples && samples.length) for (const t of samples) await api.deleteTopic(t.id);
+      if (batch?.inboxId && IS_WEB) {
+        const { deleteInbox } = await import('../web/backend.js');
+        await deleteInbox(batch.inboxId);
+      }
+      const watched = included.filter((x) => x.done).length;
+      toast(
+        `${r.ids.length} topics imported and scored for exam yield` +
+          (watched ? ` · ${watched} already watched, scheduled for recall` : '') +
+          (r.skipped?.length ? ` · ${r.skipped.length} already in your library` : ''),
+      );
       setRows([]);
       setImages([]);
+      setBatch(null);
+      texts.current = [];
       await refresh();
       navigate('next');
     } catch (e) {
@@ -88,6 +128,7 @@ export default function ImportScreenshots() {
 
       <div className="grid gap-5 lg:grid-cols-5">
         <div className="space-y-5 lg:col-span-2">
+          {!batch && <InboxBanner compact />}
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -173,16 +214,33 @@ export default function ImportScreenshots() {
             </div>
           ) : (
             <>
-              <div className="max-h-[520px] overflow-y-auto pr-1">
-                <div className="mb-2 hidden grid-cols-[28px_1fr_110px_36px] gap-2 px-1 text-[11px] uppercase tracking-widest text-slate-600 sm:grid">
+              {batch && (
+                <div className="mb-4 rounded-xl border border-violet-400/20 bg-violet-500/[0.06] p-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-white">
+                    <Sparkles size={15} className="text-violet-300" /> {batch.title || 'Topics prepared by Claude'}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-400">Read from your screenshots by Claude. Check the list, untick anything you don’t want, then import. “Watched” topics go straight into your revision schedule.</p>
+                  {samples.length > 0 && (
+                    <label className="mt-3 flex items-center gap-2 text-xs text-slate-300">
+                      <input id="remove-samples" type="checkbox" className="h-4 w-4 accent-violet-500" checked={removeSamples} onChange={(e) => setRemoveSamples(e.target.checked)} />
+                      Also remove the {samples.length} sample topics
+                    </label>
+                  )}
+                </div>
+              )}
+              <div className="max-h-[560px] overflow-y-auto pr-1">
+                <div className="mb-2 hidden grid-cols-[28px_1fr_110px_64px_36px] gap-2 px-1 text-[11px] uppercase tracking-widest text-slate-600 sm:grid">
                   <span />
                   <span>Topic</span>
                   <span>Duration</span>
+                  <span className="text-center">Watched</span>
                   <span />
                 </div>
                 <ul className="space-y-2">
-                  {rows.map((r) => (
-                    <li key={r.key} className={`grid grid-cols-[28px_1fr_90px_36px] items-center gap-2 sm:grid-cols-[28px_1fr_110px_36px] ${r.include ? '' : 'opacity-40'}`}>
+                  {rows.map((r, i) => (
+                    <li key={r.key}>
+                      {r.section && r.section !== rows[i - 1]?.section && <div className="label mb-1.5 mt-3 px-1 text-violet-300/70 first:mt-0">{r.section}</div>}
+                      <div className={`grid grid-cols-[28px_1fr_78px_44px_32px] items-center gap-2 sm:grid-cols-[28px_1fr_110px_64px_36px] ${r.include ? '' : 'opacity-40'}`}>
                       <input type="checkbox" className="h-4 w-4 accent-violet-500" checked={r.include} onChange={(e) => update(r.key, { include: e.target.checked })} aria-label="Include" />
                       <input className="input !py-2" value={r.title} placeholder="Topic title" onChange={(e) => update(r.key, { title: e.target.value })} />
                       <div className="relative">
@@ -198,9 +256,13 @@ export default function ImportScreenshots() {
                           }}
                           aria-label="Duration in minutes"
                         />
-                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">min</span>
+                        <span className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 text-xs text-slate-500 sm:inline">min</span>
                       </div>
+                      <label className="flex justify-center" title="Already watched: schedule it for revision">
+                        <input type="checkbox" className="h-4 w-4 accent-emerald-500" checked={r.done} onChange={(e) => update(r.key, { done: e.target.checked })} aria-label="Already watched" />
+                      </label>
                       <button className="btn-icon" onClick={() => setRows((x) => x.filter((y) => y.key !== r.key))} aria-label="Delete row"><Trash2 size={15} /></button>
+                      </div>
                     </li>
                   ))}
                 </ul>

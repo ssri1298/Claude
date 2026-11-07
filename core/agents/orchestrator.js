@@ -4,6 +4,7 @@ import { PlannerAgent, studyCost, recallCost } from './plannerAgent.js';
 import { TodoAgent } from './todoAgent.js';
 import { CalendarAgent, studiedMinutesByDay } from './calendarAgent.js';
 import { getSettings } from '../settings.js';
+import { initialSchedule } from './srs.js';
 import { addDays, diffDays, today as todayFn } from '../dates.js';
 
 export class HttpError extends Error {
@@ -240,19 +241,47 @@ export class StudyAgent {
     });
   }
 
+  /**
+   * Add video topics. Each item: {title, duration_min, section?, subject?, source?, status?}.
+   * `section` (the course heading) helps classify generic titles; status 'done' marks a video
+   * already watched, which goes straight into the revision schedule. Titles already in the
+   * library are skipped.
+   */
   importTopics(list) {
+    const key = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const existing = new Set(this.store.all('topics').map((t) => key(t.title)));
     const maxOrder = Math.max(-1, ...this.store.all('topics').map((t) => t.order_idx));
-    const clean = (Array.isArray(list) ? list : [])
-      .map((t) => ({ title: String(t.title || '').trim().slice(0, 200), duration_min: Math.max(0, Math.round(Number(t.duration_min) || 0)), subject: t.subject, source: t.source || 'manual' }))
-      .filter((t) => t.title.length >= 2);
+    const date = this.today();
+    const skipped = [];
+    const clean = [];
+    for (const t of Array.isArray(list) ? list : []) {
+      const title = String(t.title || '').trim().slice(0, 200);
+      if (title.length < 2) continue;
+      if (existing.has(key(title))) {
+        skipped.push(title);
+        continue;
+      }
+      existing.add(key(title));
+      clean.push({
+        title,
+        duration_min: Math.max(0, Math.round(Number(t.duration_min) || 0)),
+        section: t.section ? String(t.section).slice(0, 120) : null,
+        subject: t.subject,
+        source: t.source || 'manual',
+        done: t.status === 'done',
+      });
+    }
     const ids = this.store.tx(() =>
       clean.map((t, i) => {
-        const c = this.bus.request('yield.classify', { title: t.title });
-        return this.store.insert('topics', { title: t.title, subject: t.subject || c.subject, duration_min: t.duration_min, source: t.source, order_idx: maxOrder + 1 + i, yield_area: c.area, yield_weight: c.weight });
+        const c = this.bus.request('yield.classify', { title: t.title, hint: t.section });
+        const row = { title: t.title, section: t.section, subject: t.subject || c.subject, duration_min: t.duration_min, source: t.source, order_idx: maxOrder + 1 + i, yield_area: c.area, yield_weight: c.weight };
+        if (t.done) Object.assign(row, initialSchedule(date), { status: 'done', completed_at: date });
+        return this.store.insert('topics', row);
       }),
     );
-    this.bus.log('orchestrator', 'topics.imported', `${ids.length} video topic(s) added and scored`);
-    return ids;
+    const done = clean.filter((t) => t.done).length;
+    this.bus.log('orchestrator', 'topics.imported', `${ids.length} video topic(s) added and scored${done ? ` (${done} already watched)` : ''}${skipped.length ? `, ${skipped.length} already in library` : ''}`);
+    return { ids, skipped };
   }
 
   studyNext() {
