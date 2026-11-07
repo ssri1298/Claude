@@ -1,0 +1,35 @@
+{
+  "name": "scalpel-study-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Scalpel — NEET SS (Surgical) study assistant agent",
+  "scripts": {
+    "postinstall": "node scripts/copy-ocr-assets.js",
+    "dev": "concurrently -k -n api,web -c magenta,cyan \"node --disable-warning=ExperimentalWarning --watch server/index.js\" \"vite\"",
+    "build": "vite build",
+    "start": "NODE_ENV=production node --disable-warning=ExperimentalWarning server/index.js",
+    "test": "node --disable-warning=ExperimentalWarning --test tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
+    "express": "^4.22.3",
+    "framer-motion": "^14.10.1",
+    "lucide-react": "^1.70.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^3.10.1",
+    "tesseract.js": "^5.1.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.6.2",
+    "concurrently": "^10.0.6",
+    "postcss": "^8.5.32",
+    "tailwindcss": "^3.4.19",
+    "vite": "^5.4.21"
+  }
+}
