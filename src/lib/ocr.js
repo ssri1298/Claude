@@ -17,7 +17,8 @@ function getWorker() {
         workerPath: asset('tesseract/ocr-worker.js'),
         workerBlobURL: false,
         corePath: asset('tesseract/'),
-        langPath: asset('tesseract/lang'),
+        // The worker answers this path from tesseract/eng-traineddata.txt (see copy-ocr-assets.js).
+        langPath: asset('tesseract'),
         gzip: true,
         cacheMethod: 'none',
         logger: (m) => progressCb(m),
@@ -67,9 +68,13 @@ export async function recognize(file, onProgress = () => {}) {
     else onProgress(0.08, m.status.replace(/^\w/, (c) => c.toUpperCase()));
   };
   onProgress(0.02, 'Preparing image');
-  const [worker, canvas] = await Promise.all([getWorker(), preprocess(file)]);
-  await worker.setParameters({ preserve_interword_spaces: '1', tessedit_pageseg_mode: '4' });
-  const { data } = await worker.recognize(canvas);
-  onProgress(1, 'Done');
-  return data.text;
+  try {
+    const [worker, canvas] = await Promise.all([getWorker(), preprocess(file)]);
+    await worker.setParameters({ preserve_interword_spaces: '1', tessedit_pageseg_mode: '4' });
+    const { data } = await worker.recognize(canvas);
+    onProgress(1, 'Done');
+    return data.text;
+  } finally {
+    progressCb = () => {}; // late progress messages must not overwrite the result or error
+  }
 }
