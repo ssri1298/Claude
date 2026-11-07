@@ -2,16 +2,24 @@ import express from 'express';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openDb } from './db.js';
-import { StudyAgent } from './agents/orchestrator.js';
-import { apiRouter } from './routes/api.js';
+import { StudyAgent } from '../core/agents/orchestrator.js';
+import { createRoutes, dispatch } from '../core/routes.js';
+import { openStore } from './persist.js';
 
-export function createApp(db = openDb()) {
-  const agent = new StudyAgent(db);
+export function createApp(store) {
+  const agent = new StudyAgent(store);
+  const routes = createRoutes(agent);
   const app = express();
   app.use(express.json({ limit: '20mb' }));
-  app.use('/api', apiRouter(agent));
-
+  app.all('/api/*', (req, res) => {
+    try {
+      res.json(dispatch(routes, req.method, req.originalUrl, req.body));
+    } catch (e) {
+      const status = e.status || 500;
+      if (status === 500) console.error(e);
+      res.status(status).json({ error: e.message || 'Server error' });
+    }
+  });
   const dist = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
   if (existsSync(dist)) {
     app.use(express.static(dist));
@@ -22,6 +30,7 @@ export function createApp(db = openDb()) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT) || (process.env.NODE_ENV === 'production' ? 5173 : 5174);
-  const { app } = createApp();
-  app.listen(port, () => console.log(`\n  🩺 Scalpel API ready → http://localhost:${port}\n`));
+  const { store } = await openStore();
+  const { app } = createApp(store);
+  app.listen(port, () => console.log(`\n  🩺 Scalpel ready → http://localhost:${port}\n`));
 }

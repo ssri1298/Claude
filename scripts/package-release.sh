@@ -8,16 +8,16 @@ APP="$OUT/Scalpel"
 cd "$ROOT"
 npm run build >/dev/null
 rm -rf "$APP" && mkdir -p "$APP"
-cp -r dist server "$APP/"
+cp -r dist server core "$APP/"
 cat > "$APP/package.json" <<'JSON'
 {
   "name": "scalpel-study-agent",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node --disable-warning=ExperimentalWarning server/index.js" },
+  "scripts": { "start": "node server/index.js" },
   "dependencies": { "express": "^4.22.1" },
-  "engines": { "node": ">=22.13" }
+  "engines": { "node": ">=18.17" }
 }
 JSON
 (cd "$APP" && npm install --omit=dev --no-audit --no-fund >/dev/null)

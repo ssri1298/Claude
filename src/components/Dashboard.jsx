@@ -4,6 +4,7 @@ import { ArrowRight, BrainCircuit, Clock, Flame, ImageUp, Trophy, Sun } from 'lu
 import { api } from '../api.js';
 import { useApp } from '../store.jsx';
 import QuoteCard from './QuoteCard.jsx';
+import WelcomeCard from './WelcomeCard.jsx';
 import AgentFeed from './AgentFeed.jsx';
 import { StatusDonut, StudyTimeChart, SubjectBars, TopicsWeeklyChart } from './StudyCharts.jsx';
 import { Card, ProgressRing, Segmented, Skeleton, YieldBadge, fmtMin } from './ui.jsx';
@@ -48,6 +49,12 @@ export default function Dashboard() {
       <motion.div {...fade(0)}>
         <QuoteCard />
       </motion.div>
+
+      {stats && !Object.keys(stats.status).length && (
+        <motion.div {...fade(1)}>
+          <WelcomeCard />
+        </motion.div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <motion.div {...fade(1)}>

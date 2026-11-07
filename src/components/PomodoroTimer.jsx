@@ -164,7 +164,7 @@ export default function PomodoroTimer() {
   }[s.mode];
 
   return (
-    <div className="fixed bottom-20 right-4 z-40 lg:bottom-6 lg:right-6">
+    <div className="pomo-dock fixed z-40">
       <AnimatePresence mode="wait">
         {!open ? (
           <motion.button

@@ -13,8 +13,12 @@ A premium dark-mode study assistant that turns your video-lesson screenshots int
 - **Daily 10 am plan reminder** — a browser notification ("How much time do you have for study today?") fires once a day at 10:00 (time configurable in Settings) and opens the morning check-in. Skipped if today's plan is already finalized. Click **Enable 10:00 reminder** in the header once to allow notifications. Scalpel must be open in a browser tab (background is fine).
 - **Pomodoro timer** — floating dock on every page; link it to a to-do, focus minutes are logged to the calendar and the dashboard graph; offers to tick the to-do when the block ends.
 
+## Two ways to use it
+- **Website** — `npm run build:web` builds `dist-web/site/`, a single page (engine running in the browser) plus the offline OCR files, published as a claude.ai Artifact. Data is saved privately per signed-in user.
+- **Local app** — the same engine behind a small Node server; data in `data/study.json` (an older `data/study.db` is imported automatically on first start).
+
 ## Agent architecture
-`server/agents/` — deterministic, local, no external AI calls:
+`core/agents/` — deterministic, no external AI calls, shared by the website and the local app:
 
 | Agent | Role |
 |---|---|
@@ -24,22 +28,23 @@ A premium dark-mode study assistant that turns your video-lesson screenshots int
 | `plannerAgent.js` | Time split between recall and new videos |
 | `yieldAgent.js` | Classifies topics against `server/data/neetss-surgical.json` and ranks Study Next |
 
-Every bus message is logged to `agent_log` and shown in the dashboard's *Agent activity* feed.
+`core/store.js` is a small in-memory table store with transactions; `core/routes.js` is the one API route table used by both the Express server and the in-browser backend (`src/web/backend.js`). Every bus message is logged to `agent_log` and shown in the dashboard's *Agent activity* feed.
 
 > **Note on exam-frequency weights:** the built-in weights (1–10) are editorial estimates, not official counts. Override any topic with the slider in **Library**, or import your own past-paper analysis as CSV (`topic,count`).
 
 ## Run it
-Requires **Node.js ≥ 22.5** (uses the built-in `node:sqlite`).
+Requires **Node.js ≥ 18.17**.
 
 ```bash
 npm install          # also copies OCR engine + English language data into public/tesseract
 npm run dev          # API on :5174 + Vite on http://localhost:5173
+npm run build:web    # website build → dist-web/site/
 # or production:
 npm run build && npm start   # http://localhost:5173
 npm test             # unit tests (parser, planner, SRS, subagents, full day flow)
 ```
 
 ### Ready-to-run bundle
-`scripts/package-release.sh <out-dir>` builds `Scalpel.zip`: prebuilt app + server + double-click start scripts for Windows/Mac/Linux. The end user only needs Node.js 22.13+ installed.
+`scripts/package-release.sh <out-dir>` builds `Scalpel.zip`: prebuilt app + server + double-click start scripts for Windows/Mac/Linux. The end user only needs Node.js 18.17+ installed.
 
-Data lives in `data/study.db` (SQLite). Export/restore a JSON backup from **Settings**.
+Export/restore a JSON backup from **Settings** (backups from older versions still restore).

@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Flame, Clock, Hourglass, Sun, BellRing } from 'lucide-react';
 import { permission, requestPermission } from '../lib/reminder.js';
 import { useApp } from '../store.jsx';
-import { api } from '../api.js';
+import { api, IS_WEB } from '../api.js';
 import { Logo } from './Sidebar.jsx';
 import { fmtMin } from './ui.jsx';
+import SaveStatus from './SaveStatus.jsx';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -34,10 +35,11 @@ export default function Header() {
   );
 
   return (
-    <header className="sticky top-0 z-20 border-b border-white/[0.04] bg-ink-950/60 backdrop-blur-xl">
+    <header style={{ top: 'env(safe-area-inset-top, 0px)' }} className="sticky z-20 border-b border-white/[0.04] bg-ink-950/60 backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-[1320px] flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-10">
-        <div className="lg:hidden">
+        <div className="flex items-center gap-3 lg:hidden">
           <Logo />
+          <SaveStatus compact />
         </div>
         <div className="hidden lg:block">
           <div className="text-xs text-slate-500">{dateStr}</div>
@@ -56,7 +58,7 @@ export default function Header() {
               <span className="font-display text-sm text-white">{Math.max(0, stats.daysToExam)}</span> days to exam
             </Pill>
           )}
-          {settings?.reminder?.enabled && perm === 'default' && (
+          {!IS_WEB && settings?.reminder?.enabled && perm === 'default' && (
             <button className="btn-ghost !py-2 text-xs" onClick={enableReminder} title="Allow notifications for the daily plan reminder">
               <BellRing size={14} className="text-amber-300" /> Enable {settings.reminder.time} reminder
             </button>

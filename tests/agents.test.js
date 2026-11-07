@@ -1,15 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { openDb } from '../server/db.js';
-import { StudyAgent } from '../server/agents/orchestrator.js';
-import { classify, rankTopics, parseFrequencyCsv } from '../server/agents/yieldAgent.js';
-import { planDay } from '../server/agents/plannerAgent.js';
-import { review, initialSchedule } from '../server/agents/srs.js';
-import { DEFAULT_SETTINGS } from '../server/db.js';
+import { Store } from '../core/store.js';
+import { StudyAgent } from '../core/agents/orchestrator.js';
+import { classify, rankTopics, parseFrequencyCsv } from '../core/agents/yieldAgent.js';
+import { planDay } from '../core/agents/plannerAgent.js';
+import { review, initialSchedule } from '../core/agents/srs.js';
+import { DEFAULT_SETTINGS } from '../core/settings.js';
+import { createRoutes, dispatch } from '../core/routes.js';
 
 let day = '2026-11-07';
 const mk = () => {
-  const db = openDb(':memory:');
+  const db = new Store();
   const agent = new StudyAgent(db, { today: () => day, now: () => new Date(`${day}T10:00:00`) });
   return { db, agent };
 };
@@ -99,7 +100,7 @@ test('full day flow: check-in → finalize → to-do & calendar subagents → da
   const log = agent.agentLog().map((l) => l.event);
   assert.ok(log.includes('day.complete'));
   assert.ok(log.includes('todos.created') && log.includes('day.scheduled'));
-  assert.ok(db.prepare("SELECT COUNT(*) n FROM calendar_events WHERE status='done'").get().n >= 1);
+  assert.ok(db.count('calendar_events', (e) => e.status === 'done') >= 1);
 
   const ext = agent.extendDay({ mode: 'new', minutes: 60 });
   assert.ok(ext.added >= 1);
@@ -109,8 +110,8 @@ test('full day flow: check-in → finalize → to-do & calendar subagents → da
   day = '2026-11-08';
   const t2 = agent.getToday();
   assert.equal(t2.checkInNeeded, true);
-  assert.ok(db.prepare("SELECT COUNT(*) n FROM todos WHERE status='missed'").get().n >= 1);
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM topics WHERE carryover = 1').get().n, ext.added);
+  assert.ok(db.count('todos', (t) => t.status === 'missed') >= 1);
+  assert.equal(db.count('topics', (t) => t.carryover === 1), ext.added);
   const p2 = agent.startDay({ availableMin: 180 }).plan;
   assert.ok(p2.items.some((i) => i.kind === 'revision'));
   assert.ok(p2.items.filter((i) => i.kind === 'new').length >= 1);
@@ -123,9 +124,9 @@ test('untick restores SRS state; pomodoro minutes replace planned minutes in sta
   agent.startDay({ availableMin: 90 });
   const [td] = agent.finalizePlan().todos;
   agent.completeTask(td.id, { done: true });
-  assert.equal(db.prepare('SELECT status FROM topics').get().status, 'done');
+  assert.equal(db.all('topics')[0].status, 'done');
   agent.completeTask(td.id, { done: false });
-  assert.equal(db.prepare('SELECT status FROM topics').get().status, 'planned');
+  assert.equal(db.all('topics')[0].status, 'planned');
   agent.completeTask(td.id, { done: true });
   assert.equal(agent.stats(7).today.studied, td.minutes);
   agent.logSession({ minutes: 25, todoId: td.id, startTs: `${day}T10:00:00` });
@@ -138,9 +139,44 @@ test('untick restores SRS state; pomodoro minutes replace planned minutes in sta
 test('low-yield topics are only suggested, never auto-skipped', () => {
   const { agent } = mk();
   agent.importTopics([{ title: 'Gynaecomastia overview', duration_min: 15 }, { title: 'Acute pancreatitis', duration_min: 30 }]);
-  agent.db.prepare("UPDATE topics SET yield_override = 2 WHERE title LIKE 'Gyn%'").run();
+  agent.store.update('topics', (t) => t.title.startsWith('Gyn'), { yield_override: 2 });
   const n = agent.studyNext();
   assert.equal(n.suggestedSkips.length, 1);
   assert.equal(n.suggestedSkips[0].status, 'pending');
   assert.equal(n.ranked.length, 1);
+});
+
+test('routes: dispatch, errors, export/import round-trip, legacy backup import', () => {
+  const { agent, db } = mk();
+  const routes = createRoutes(agent);
+  const call = (m, u, b) => dispatch(routes, m, u, b);
+  call('POST', '/api/topics/bulk', { topics: [{ title: 'Burns', duration_min: 30 }, { title: 'Hernia', duration_min: 20 }] });
+  assert.equal(call('GET', '/api/topics').length, 2);
+  assert.throws(() => call('GET', '/api/nope'), /No route/);
+  assert.throws(() => call('POST', '/api/day/start', { availableMin: 5 }), (e) => e.status === 400);
+  const t = call('PATCH', '/api/topics/1', { yield_override: 9 });
+  assert.equal(t.weight, 9);
+  call('PUT', '/api/settings', { revisionShare: 0.4, bogus: 1 });
+  const backup = JSON.parse(JSON.stringify(call('GET', '/api/export')));
+  call('DELETE', '/api/topics/1');
+  assert.equal(call('GET', '/api/topics').length, 1);
+  call('POST', '/api/import', backup);
+  assert.equal(call('GET', '/api/topics').length, 2);
+  assert.equal(call('GET', '/api/settings').revisionShare, 0.4);
+  // ids keep increasing after a restore
+  call('POST', '/api/topics/bulk', { topics: [{ title: 'Spleen', duration_min: 10 }] });
+  assert.equal(Math.max(...call('GET', '/api/topics').map((x) => x.id)), 3);
+  // SQLite-era export format
+  call('POST', '/api/import', { topics: [{ id: 7, title: 'Old', duration_min: 5, status: 'pending', order_idx: 0, yield_weight: 6 }], settings: [{ key: 'recallMinutes', value: '15' }] });
+  assert.equal(call('GET', '/api/topics')[0].title, 'Old');
+  assert.equal(call('GET', '/api/settings').recallMinutes, 15);
+  assert.throws(() => call('POST', '/api/import', { foo: 1 }), /not a Scalpel backup/);
+});
+
+test('store transactions roll back on error', () => {
+  const s = new Store();
+  s.insert('topics', { title: 'A' });
+  assert.throws(() => s.tx(() => { s.insert('topics', { title: 'B' }); throw new Error('boom'); }));
+  assert.equal(s.count('topics'), 1);
+  assert.equal(s.insert('topics', { title: 'C' }), 2);
 });

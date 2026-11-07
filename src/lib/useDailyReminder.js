@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { api } from '../api.js';
+import { api, IS_WEB } from '../api.js';
 import { useApp } from '../store.jsx';
 import { getLastReminded, localISO, permission, registerReminderWorker, setLastReminded, shouldRemind, showPlanNotification } from './reminder.js';
 
@@ -9,7 +9,7 @@ export function useDailyReminder() {
   const busy = useRef(false);
 
   useEffect(() => {
-    registerReminderWorker();
+    if (!IS_WEB) registerReminderWorker();
     const open = () => {
       try {
         localStorage.removeItem('scalpel.checkinDismissed');
@@ -37,10 +37,10 @@ export function useDailyReminder() {
         const t = await api.today(); // fresh: the date may have rolled over since the page loaded
         setLastReminded(localISO(now));
         if (t.plan?.status === 'final') return;
-        if (permission() === 'granted') {
+        if (!IS_WEB && permission() === 'granted') {
           await showPlanNotification('How much time do you have for study today? Tap to build your plan.');
         }
-        if (!document.hidden) {
+        if (IS_WEB || !document.hidden) {
           try {
             localStorage.removeItem('scalpel.checkinDismissed');
           } catch {}

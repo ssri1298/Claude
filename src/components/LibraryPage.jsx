@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileUp, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../store.jsx';
-import { Card, SectionHeader, Segmented, YieldBadge, fmtMin, Empty } from './ui.jsx';
+import { Card, SectionHeader, Segmented, YieldBadge, fmtMin, Empty, ConfirmButton } from './ui.jsx';
 
 const STATUS_CLS = {
   pending: 'border-slate-500/30 text-slate-400',
@@ -49,6 +49,20 @@ export default function LibraryPage() {
         subtitle="Every imported video topic. Drag the exam-frequency slider to override the built-in estimate with your own past-paper analysis."
         right={
           <>
+            {topics.some((t) => t.source === 'sample') && (
+              <ConfirmButton
+                className="btn-ghost"
+                confirmLabel="Remove all sample topics?"
+                onConfirm={async () => {
+                  for (const t of topics.filter((x) => x.source === 'sample')) await api.deleteTopic(t.id);
+                  toast('Sample topics removed');
+                  load();
+                  refresh();
+                }}
+              >
+                <Trash2 size={15} /> Remove sample topics
+              </ConfirmButton>
+            )}
             <button className="btn-ghost" onClick={() => csvRef.current?.click()} title="CSV with columns: topic,count">
               <FileUp size={15} /> Import past-paper CSV
             </button>
@@ -110,18 +124,19 @@ export default function LibraryPage() {
                       <RotateCcw size={13} /> Restore
                     </button>
                   )}
-                  <button
-                    className="btn-icon hover:text-rose-300"
-                    onClick={async () => {
-                      if (!confirm(`Delete “${t.title}”? Its history will be removed.`)) return;
+                  <ConfirmButton
+                    confirmLabel="Delete topic?"
+                    title="Delete this topic and its history"
+                    aria-label="Delete"
+                    onConfirm={async () => {
                       await api.deleteTopic(t.id);
+                      toast(`Deleted “${t.title}”`);
                       load();
                       refresh();
                     }}
-                    aria-label="Delete"
                   >
                     <Trash2 size={15} />
-                  </button>
+                  </ConfirmButton>
                 </div>
               </li>
             ))}

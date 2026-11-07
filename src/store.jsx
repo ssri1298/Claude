@@ -6,9 +6,10 @@ import { api } from './api.js';
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
 
-const PAGES = ['dashboard', 'today', 'next', 'import', 'library', 'revision', 'calendar', 'settings'];
+// Plain #name hashes so links work on the hosted website too (it only passes #name through).
+const PAGES = ['dashboard', 'today', 'next', 'import', 'library', 'revision', 'calendar', 'prefs'];
 const pageFromHash = () => {
-  const h = window.location.hash.replace('#/', '').replace('#', '');
+  const h = window.location.hash.replace(/^#\/?/, '');
   return PAGES.includes(h) ? h : 'dashboard';
 };
 
@@ -27,7 +28,7 @@ export function AppProvider({ children }) {
   }, []);
 
   const navigate = useCallback((p) => {
-    window.location.hash = `/${p}`;
+    window.location.hash = p;
     setPage(p);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
@@ -49,6 +50,12 @@ export function AppProvider({ children }) {
       toast(e.message, 'error');
     }
   }, [toast]);
+
+  useEffect(() => {
+    const f = () => refresh();
+    window.addEventListener('scalpel:remote-update', f);
+    return () => window.removeEventListener('scalpel:remote-update', f);
+  }, [refresh]);
 
   useEffect(() => {
     refresh().then((t) => {

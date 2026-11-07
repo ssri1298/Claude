@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 export const fmtMin = (m) => {
   m = Math.round(m || 0);
@@ -161,5 +161,29 @@ export function Segmented({ value, onChange, options }) {
         </button>
       ))}
     </div>
+  );
+}
+
+/** Two-step button: the first click arms it, the second (within 4 s) runs `onConfirm`. */
+export function ConfirmButton({ onConfirm, children, confirmLabel = 'Click again to confirm', className = 'btn-icon hover:text-rose-300', armedClassName = 'btn !border !border-rose-400/40 !bg-rose-500/15 !px-3 !py-1.5 text-xs text-rose-200', ...rest }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  return (
+    <button
+      {...rest}
+      className={armed ? armedClassName : className}
+      onClick={() => {
+        if (armed) {
+          setArmed(false);
+          onConfirm();
+        } else setArmed(true);
+      }}
+    >
+      {armed ? confirmLabel : children}
+    </button>
   );
 }

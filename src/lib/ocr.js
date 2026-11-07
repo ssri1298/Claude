@@ -1,18 +1,36 @@
 import { createWorker } from 'tesseract.js';
 
-// All Tesseract assets are served locally from /tesseract (copied at npm install),
-// so screenshot reading works fully offline.
+// Tesseract runs from files published next to the page (built by scripts/copy-ocr-assets.js):
+// a single self-contained worker with the WASM core baked in, plus the English language data.
+// Nothing is fetched from other hosts, so screenshot reading works offline and on the website.
 let workerPromise = null;
 let progressCb = () => {};
+const asset = (p) => new URL(p, document.baseURI).href;
 
 function getWorker() {
   if (!workerPromise) {
-    workerPromise = createWorker('eng', 1, {
-      workerPath: '/tesseract/worker.min.js',
-      corePath: '/tesseract/core',
-      langPath: '/tesseract/lang',
-      gzip: true,
-      logger: (m) => progressCb(m),
+    let fail;
+    const failed = new Promise((_, rej) => (fail = rej));
+    const timer = setTimeout(() => fail(new Error('it took too long to start')), 60000);
+    workerPromise = Promise.race([
+      createWorker('eng', 1, {
+        workerPath: asset('tesseract/ocr-worker.js'),
+        workerBlobURL: false,
+        corePath: asset('tesseract/'),
+        langPath: asset('tesseract/lang'),
+        gzip: true,
+        cacheMethod: 'none',
+        logger: (m) => progressCb(m),
+        errorHandler: (e) => fail(new Error(String(e?.message || e))),
+      }),
+      failed,
+    ]).then((w) => {
+      clearTimeout(timer);
+      return w;
+    }).catch((e) => {
+      clearTimeout(timer);
+      workerPromise = null;
+      throw new Error(`The screenshot reader couldn't start in this browser (${e?.message || e}). You can paste the lesson list as text instead.`);
     });
   }
   return workerPromise;

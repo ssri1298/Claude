@@ -1,4 +1,11 @@
+// The website build runs the engine in the browser; the local app talks to its Node server.
+export const IS_WEB = import.meta.env.VITE_TARGET === 'web';
+
 async function req(method, url, body) {
+  if (IS_WEB) {
+    const { call } = await import('./web/backend.js');
+    return call(method, url, body);
+  }
   const res = await fetch(`/api${url}`, {
     method,
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,

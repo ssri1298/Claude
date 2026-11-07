@@ -1,7 +1,8 @@
 node_modules/
 dist/
-data/
+/data/
 public/tesseract/
 *.log
 .DS_Store
 release/
+dist-web/

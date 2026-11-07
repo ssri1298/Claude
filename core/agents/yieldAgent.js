@@ -1,6 +1,4 @@
-import { readFileSync } from 'node:fs';
-
-const TABLE = JSON.parse(readFileSync(new URL('../data/neetss-surgical.json', import.meta.url), 'utf8'));
+import TABLE from '../data/neetss-surgical.js';
 
 const norm = (s) => ` ${String(s).toLowerCase().replace(/[^a-z0-9+\- ]+/g, ' ').replace(/\s+/g, ' ').trim()} `;
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -92,8 +90,8 @@ export function parseFrequencyCsv(csv) {
 export class YieldAgent {
   name = 'yield';
   handles = ['yield.classify', 'yield.rank', 'yield.importCsv', 'yield.table'];
-  constructor(db) {
-    this.db = db;
+  constructor(store) {
+    this.store = store;
   }
 
   handle({ type, payload }) {
@@ -103,7 +101,7 @@ export class YieldAgent {
       case 'yield.table':
         return TABLE;
       case 'yield.rank': {
-        const topics = this.db.prepare('SELECT * FROM topics').all();
+        const topics = this.store.all('topics');
         const ranked = rankTopics(topics);
         const th = payload.lowYieldThreshold ?? 3;
         return {
@@ -113,8 +111,7 @@ export class YieldAgent {
       }
       case 'yield.importCsv': {
         const rows = parseFrequencyCsv(payload.csv);
-        const topics = this.db.prepare('SELECT id, title, yield_area FROM topics').all();
-        const upd = this.db.prepare('UPDATE topics SET yield_override = ? WHERE id = ?');
+        const topics = this.store.all('topics');
         let matched = 0;
         for (const t of topics) {
           let best = null;
@@ -124,7 +121,7 @@ export class YieldAgent {
             if (s > 0.55 && (!best || s > best.s)) best = { ...r, s };
           }
           if (best) {
-            upd.run(best.weight, t.id);
+            this.store.update('topics', t.id, { yield_override: best.weight });
             matched++;
           }
         }

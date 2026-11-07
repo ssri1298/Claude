@@ -77,15 +77,12 @@ export function planDay({ availableMin, settings, ranked, due, date }) {
 export class PlannerAgent {
   name = 'planner';
   handles = ['planner.draft', 'planner.extend', 'planner.due'];
-  constructor(db) {
-    this.db = db;
+  constructor(store) {
+    this.store = store;
   }
 
   due(date, exclude = new Set()) {
-    return this.db
-      .prepare("SELECT * FROM topics WHERE status = 'done' AND next_review IS NOT NULL AND next_review <= ?")
-      .all(date)
-      .filter((t) => !exclude.has(t.id));
+    return this.store.all('topics', (t) => t.status === 'done' && t.next_review != null && t.next_review <= date && !exclude.has(t.id));
   }
 
   handle({ type, payload }) {
@@ -94,7 +91,7 @@ export class PlannerAgent {
       case 'planner.due':
         return this.due(date);
       case 'planner.draft': {
-        const topics = this.db.prepare('SELECT * FROM topics').all();
+        const topics = this.store.all('topics');
         const th = settings.lowYieldThreshold;
         const ranked = rankTopics(topics).filter((t) => !(t.weight <= th && !t.skip_dismissed));
         const plan = planDay({ availableMin: payload.availableMin, settings, ranked, due: this.due(date), date });
@@ -103,12 +100,10 @@ export class PlannerAgent {
       }
       case 'planner.extend': {
         // Extra block after the day's list is finished: either more new topics or more recall.
-        const inToday = new Set(
-          this.db.prepare('SELECT topic_id FROM todos WHERE date = ?').all(date).map((r) => r.topic_id),
-        );
+        const inToday = new Set(this.store.all('todos', (r) => r.date === date).map((r) => r.topic_id));
         const minutes = payload.minutes;
         if (payload.mode === 'new') {
-          const topics = this.db.prepare('SELECT * FROM topics').all();
+          const topics = this.store.all('topics');
           const th = settings.lowYieldThreshold;
           const ranked = rankTopics(topics).filter((t) => !inToday.has(t.id) && !(t.weight <= th && !t.skip_dismissed));
           const plan = planDay({
@@ -124,10 +119,9 @@ export class PlannerAgent {
         // Revision: due topics first, then the weakest/least-recently reviewed done topics.
         let pool = this.due(date, inToday);
         if (!pool.length) {
-          pool = this.db
-            .prepare("SELECT * FROM topics WHERE status = 'done' ORDER BY ease ASC, COALESCE(last_reviewed, completed_at) ASC")
-            .all()
-            .filter((t) => !inToday.has(t.id))
+          pool = this.store
+            .all('topics', (t) => t.status === 'done' && !inToday.has(t.id))
+            .sort((a, b) => a.ease - b.ease || String(a.last_reviewed ?? a.completed_at ?? '').localeCompare(String(b.last_reviewed ?? b.completed_at ?? '')))
             .map((t) => ({ ...t, next_review: date }));
         }
         const plan = planDay({

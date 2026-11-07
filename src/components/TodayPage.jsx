@@ -78,7 +78,7 @@ function PlanBuilder({ plan }) {
   };
 
   const inPlan = new Set(items.map((i) => `${i.kind}:${i.topic_id}`));
-  const notes = plan.summary?.notes || [];
+  const notes = plan.notes || [];
 
   return (
     <div className="grid gap-5 lg:grid-cols-3">

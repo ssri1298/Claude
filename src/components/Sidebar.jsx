@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { LayoutDashboard, CalendarCheck, Sparkles, ImageUp, Library, BrainCircuit, CalendarDays, Settings, Scissors } from 'lucide-react';
 import { useApp } from '../store.jsx';
+import SaveStatus from './SaveStatus.jsx';
 
 export const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -10,7 +11,7 @@ export const NAV = [
   { id: 'revision', label: 'Revision', icon: BrainCircuit },
   { id: 'calendar', label: 'Calendar', icon: CalendarDays },
   { id: 'library', label: 'Library', icon: Library },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'prefs', label: 'Settings', icon: Settings },
 ];
 
 export function Logo() {
@@ -60,7 +61,8 @@ export default function Sidebar() {
             );
           })}
         </nav>
-        <div className="glass p-4">
+        <SaveStatus />
+        <div className="glass mt-3 p-4">
           <div className="label">Agents online</div>
           <div className="mt-3 space-y-2 text-xs text-slate-400">
             {['Study orchestrator', 'Planner', 'To-do subagent', 'Calendar subagent'].map((a) => (

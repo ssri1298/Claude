@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { BellRing, Download, FileUp, Save } from 'lucide-react';
 import { permission, requestPermission, showPlanNotification } from '../lib/reminder.js';
-import { api } from '../api.js';
+import { api, IS_WEB } from '../api.js';
 import { useApp } from '../store.jsx';
 import { Card, SectionHeader } from './ui.jsx';
+import SaveStatus from './SaveStatus.jsx';
 
 function Field({ label, hint, children }) {
   return (
@@ -22,6 +23,7 @@ export default function Settings() {
   const [s, setS] = useState(settings);
   const [table, setTable] = useState(null);
   const [perm, setPerm] = useState(permission);
+  const [pending, setPending] = useState(null); // backup file waiting for confirmation
   const fileRef = useRef();
   useEffect(() => setS(settings), [settings]);
   useEffect(() => {
@@ -40,16 +42,35 @@ export default function Settings() {
   };
   const exportData = async () => {
     const d = await api.exportData();
-    const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
+    const filename = `scalpel-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const text = JSON.stringify(d, null, 2);
+    if (IS_WEB) {
+      // The website asks you to confirm the download.
+      const downloads = await window.claude?.use?.('downloads');
+      if (!downloads) return toast('Downloads aren’t available in this view.', 'error');
+      try {
+        await downloads.save({ filename, data: text });
+      } catch (e) {
+        if (e?.code !== 'cancelled' && e?.code !== 'declined') toast('The backup could not be saved.', 'error');
+      }
+      return;
+    }
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `scalpel-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    a.download = filename;
     a.click();
   };
-  const importData = async (file) => {
-    if (!confirm('Replace ALL current data with this backup?')) return;
+  const pickBackup = async (file) => {
     try {
-      await api.importData(JSON.parse(await file.text()));
+      setPending({ name: file.name, data: JSON.parse(await file.text()) });
+    } catch {
+      toast('That file is not a Scalpel backup', 'error');
+    }
+  };
+  const restore = async () => {
+    try {
+      await api.importData(pending.data);
+      setPending(null);
       await refresh();
       toast('Backup restored');
     } catch (e) {
@@ -97,13 +118,15 @@ export default function Settings() {
               <input type="time" className="input" value={s.reminder?.time || '10:00'} onChange={(e) => setR('time', e.target.value || '10:00')} />
             </Field>
             <p className="text-xs text-slate-500">
-              Browser notification status: <span className={perm === 'granted' ? 'text-emerald-300' : 'text-amber-300'}>{perm}</span>. The reminder fires while Scalpel is open in a tab (it can be in the background). It’s skipped once today’s plan is finalized.
+              {IS_WEB
+                ? 'At the reminder time, Scalpel opens the “How much time do you have today?” check-in if it’s open in a tab. It’s skipped once today’s plan is finalized.'
+                : <>Browser notification status: <span className={perm === 'granted' ? 'text-emerald-300' : 'text-amber-300'}>{perm}</span>. The reminder fires while Scalpel is open in a tab (it can be in the background). It’s skipped once today’s plan is finalized.</>}
             </p>
             <div className="flex flex-wrap gap-2">
-              {perm !== 'granted' && perm !== 'unsupported' && (
+              {!IS_WEB && perm !== 'granted' && perm !== 'unsupported' && (
                 <button className="btn-ghost" onClick={async () => setPerm(await requestPermission())}><BellRing size={15} /> Allow notifications</button>
               )}
-              {perm === 'granted' && (
+              {!IS_WEB && perm === 'granted' && (
                 <button className="btn-ghost" onClick={() => showPlanNotification('Test reminder — this is how your daily plan prompt will look.')}><BellRing size={15} /> Send test notification</button>
               )}
             </div>
@@ -125,12 +148,26 @@ export default function Settings() {
           </Card>
           <Card className="p-5 sm:p-6">
             <div className="label mb-4">Your data</div>
-            <p className="mb-4 text-sm text-slate-400">Everything is stored locally in <code className="rounded bg-white/5 px-1.5 py-0.5 text-xs">data/study.db</code>. You can also export a JSON backup.</p>
+            <p className="mb-4 text-sm text-slate-400">
+              {IS_WEB
+                ? 'Your topics and progress are saved privately to your account and follow you to any device you sign in on. Export a backup now and then.'
+                : <>Everything is stored on this computer in <code className="rounded bg-white/5 px-1.5 py-0.5 text-xs">data/study.json</code>. You can also export a backup.</>}
+            </p>
+            <div className="mb-4"><SaveStatus /></div>
             <div className="flex flex-wrap gap-2">
               <button className="btn-ghost" onClick={exportData}><Download size={15} /> Export backup</button>
               <button className="btn-ghost" onClick={() => fileRef.current?.click()}><FileUp size={15} /> Restore backup</button>
-              <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files[0] && importData(e.target.files[0])} />
+              <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => { if (e.target.files[0]) pickBackup(e.target.files[0]); e.target.value = ''; }} />
             </div>
+            {pending && (
+              <div className="mt-4 rounded-xl border border-rose-400/25 bg-rose-500/[0.06] p-4">
+                <div className="text-sm text-rose-100">Replace all your current topics, plans and progress with “{pending.name}”?</div>
+                <div className="mt-3 flex gap-2">
+                  <button className="btn !border !border-rose-400/40 !bg-rose-500/20 text-rose-100 hover:!bg-rose-500/30" onClick={restore}>Replace my data</button>
+                  <button className="btn-ghost" onClick={() => setPending(null)}>Cancel</button>
+                </div>
+              </div>
+            )}
           </Card>
           {table && (
             <Card className="p-5 sm:p-6">

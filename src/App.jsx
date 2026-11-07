@@ -22,7 +22,7 @@ const PAGES = {
   library: LibraryPage,
   revision: RevisionQueue,
   calendar: CalendarView,
-  settings: Settings,
+  prefs: Settings,
 };
 
 export default function App() {
