@@ -4,3 +4,4 @@ data/
 public/tesseract/
 *.log
 .DS_Store
+release/

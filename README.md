@@ -39,4 +39,7 @@ npm run build && npm start   # http://localhost:5173
 npm test             # unit tests (parser, planner, SRS, subagents, full day flow)
 ```
 
+### Ready-to-run bundle
+`scripts/package-release.sh <out-dir>` builds `Scalpel.zip`: prebuilt app + server + double-click start scripts for Windows/Mac/Linux. The end user only needs Node.js 22.13+ installed.
+
 Data lives in `data/study.db` (SQLite). Export/restore a JSON backup from **Settings**.
