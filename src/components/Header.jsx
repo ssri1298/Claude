@@ -6,6 +6,7 @@ import { api, IS_WEB } from '../api.js';
 import { Logo } from './Sidebar.jsx';
 import { fmtMin } from './ui.jsx';
 import SaveStatus from './SaveStatus.jsx';
+import { examCountdown } from '../lib/countdown.js';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -26,6 +27,7 @@ export default function Header() {
     api.stats(7).then(setStats).catch(() => {});
   }, [version]);
 
+  const countdown = stats?.examDate ? examCountdown(stats.date, stats.examDate) : null;
   const dateStr = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
   const Pill = ({ icon: Icon, color, children, title }) => (
     <div title={title} className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-xs font-medium text-slate-300">
@@ -53,9 +55,19 @@ export default function Header() {
             <span className="font-display text-sm text-white">{stats ? fmtMin(stats.totals.weekMinutes) : '–'}</span>
             <span className="hidden sm:inline">this week</span>
           </Pill>
-          {stats?.daysToExam != null && (
-            <Pill icon={Hourglass} color="text-violet-300" title={`Exam on ${stats.examDate}`}>
-              <span className="font-display text-sm text-white">{Math.max(0, stats.daysToExam)}</span> days to exam
+          {countdown && (
+            <Pill
+              icon={Hourglass}
+              color="text-violet-300"
+              title={`Exam on ${new Date(stats.examDate + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}${countdown.days > 0 ? ` · ${countdown.days} days` : ''}`}
+            >
+              {countdown.value != null ? (
+                <>
+                  <span className="font-display text-sm text-white">{countdown.value}</span> {countdown.unit} to exam
+                </>
+              ) : (
+                <span className="text-white">{countdown.label}</span>
+              )}
             </Pill>
           )}
           {!IS_WEB && settings?.reminder?.enabled && perm === 'default' && (
