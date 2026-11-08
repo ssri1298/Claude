@@ -113,7 +113,7 @@ function PlanBuilder({ plan }) {
                   <div className="truncate text-sm font-medium text-white">{it.title}</div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     <KindBadge kind={it.kind} />
-                    {it.weight != null && <YieldBadge weight={it.weight} />}
+                    {it.weight != null && <YieldBadge weight={it.weight} area={it.yield_area} />}
                   </div>
                 </div>
                 <div className="flex items-center gap-1 rounded-lg border border-white/[0.06] bg-ink-900/60 px-1">
@@ -302,7 +302,7 @@ function TodoList({ todos, events }) {
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
                         {ev && <span className="font-display text-slate-400">{ev.start}–{ev.end}</span>}
                         <span>{fmtMin(td.minutes)}</span>
-                        {td.weight != null && <YieldBadge weight={td.weight} />}
+                        {td.weight != null && <YieldBadge weight={td.weight} area={td.yield_area} />}
                       </div>
                     </div>
                     {!isDone && (

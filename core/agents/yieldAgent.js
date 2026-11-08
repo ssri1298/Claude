@@ -8,9 +8,11 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const COMPILED = TABLE.areas.map((a) => ({
   ...a,
   rx: a.keywords.map((k) => {
-    const kw = k.trim();
+    // "~word" marks a broad keyword (e.g. "~breast"): it places a title only when nothing more specific matches.
+    const broad = k.startsWith('~');
+    const kw = (broad ? k.slice(1) : k).trim();
     const body = esc(kw).replace(/ /g, '[ -]?');
-    return { len: kw.length, re: new RegExp(kw.length >= 6 ? `\\b${body}` : `\\b${body}\\b`) };
+    return { len: broad ? 1 : kw.length, re: new RegExp(kw.length >= 6 ? `\\b${body}` : `\\b${body}\\b`) };
   }),
 }));
 

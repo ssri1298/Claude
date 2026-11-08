@@ -3,7 +3,7 @@ import { YieldAgent } from './yieldAgent.js';
 import { PlannerAgent, studyCost, recallCost } from './plannerAgent.js';
 import { TodoAgent } from './todoAgent.js';
 import { CalendarAgent, studiedMinutesByDay } from './calendarAgent.js';
-import { getSettings } from '../settings.js';
+import { getSettings, saveSettings } from '../settings.js';
 import { initialSchedule } from './srs.js';
 import { addDays, diffDays, today as todayFn } from '../dates.js';
 
@@ -249,6 +249,7 @@ export class StudyAgent {
    */
   importTopics(list) {
     const key = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const wasEmpty = this.store.count('topics') === 0;
     const existing = new Set(this.store.all('topics').map((t) => key(t.title)));
     const maxOrder = Math.max(-1, ...this.store.all('topics').map((t) => t.order_idx));
     const date = this.today();
@@ -279,6 +280,8 @@ export class StudyAgent {
         return this.store.insert('topics', row);
       }),
     );
+    // A first import is already scored with the current model: nothing to re-score.
+    if (wasEmpty && ids.length) saveSettings(this.store, { yieldModelSeen: this.bus.request('yield.table').version || null });
     const done = clean.filter((t) => t.done).length;
     this.bus.log('orchestrator', 'topics.imported', `${ids.length} video topic(s) added and scored${done ? ` (${done} already watched)` : ''}${skipped.length ? `, ${skipped.length} already in library` : ''}`);
     return { ids, skipped };

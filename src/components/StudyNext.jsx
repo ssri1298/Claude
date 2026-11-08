@@ -37,7 +37,7 @@ function SkipTray({ items, onDone }) {
           <li key={t.id} className="flex items-center gap-3 rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm text-white">{t.title}</div>
-              <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500"><YieldBadge weight={t.weight} /> {t.yield_area}</div>
+              <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500"><YieldBadge weight={t.weight} area={t.yield_area} /> {t.yield_area}</div>
             </div>
             <button className="btn-ghost !px-3 !py-1.5 text-xs" onClick={() => act(t, false)}><X size={13} /> Keep</button>
             <button className="btn !border !border-amber-400/30 !bg-amber-500/10 !px-3 !py-1.5 text-xs text-amber-200 hover:!bg-amber-500/20" onClick={() => act(t, true)}><Check size={13} /> Approve skip</button>
@@ -107,7 +107,7 @@ export default function StudyNext() {
                           {t.status === 'planned' && <span className="chip border-violet-400/30 text-violet-300">today</span>}
                         </div>
                         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                          <YieldBadge weight={t.weight} />
+                          <YieldBadge weight={t.weight} area={t.yield_area} />
                           <span>{t.yield_area}</span>
                           <span>· {fmtMin(t.duration_min)}</span>
                         </div>
@@ -129,7 +129,7 @@ export default function StudyNext() {
             </ol>
           )}
           <p className="mt-6 flex items-center gap-2 text-xs text-slate-500">
-            <Sparkles size={12} /> The built-in frequency weights are estimates. Fine-tune them per topic in the Library, or import your own past-paper counts as a CSV.
+            <Sparkles size={12} /> Weights come from the 2022–2024 NEET SS Surgical recall papers and 2025 analyses. Hover a badge to see why, or see Settings → Exam-frequency model. You can still override any topic in the Library.
           </p>
         </>
       )}

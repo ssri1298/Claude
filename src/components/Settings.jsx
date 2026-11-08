@@ -172,19 +172,47 @@ export default function Settings() {
           {table && (
             <Card className="p-5 sm:p-6">
               <div className="label mb-1">Exam-frequency model</div>
-              <p className="mb-4 text-xs text-slate-500">{table.exam} · {table.areas.length} topic areas. {table.note}</p>
-              <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
-                {[...table.areas].sort((a, b) => b.weight - a.weight).map((a) => (
-                  <div key={a.area} className="flex items-center gap-3 text-xs">
-                    <span className="w-6 text-right font-display text-white">{a.weight}</span>
-                    <div className="h-1.5 w-20 overflow-hidden rounded-full bg-white/5">
-                      <div className="h-full bg-gradient-to-r from-violet-500 to-cyan-400" style={{ width: `${a.weight * 10}%` }} />
-                    </div>
-                    <span className="truncate text-slate-300">{a.area}</span>
-                    <span className="ml-auto shrink-0 text-slate-600">{a.subject}</span>
-                  </div>
+              <p className="text-xs text-slate-400">
+                {table.areas.length} topic areas, calibrated {table.calibrated?.checked} from real NEET SS Surgical recall papers (2022–2024) and published 2025 analyses. Tap a row to see why it has its weight.
+              </p>
+              <div className="mb-3 mt-2 flex flex-wrap gap-3 text-[11px] text-slate-500">
+                {[['high', 'bg-emerald-400', '6+ questions in recalls'], ['medium', 'bg-amber-400', 'a few questions or several sources'], ['low', 'bg-slate-500', 'estimate only']].map(([k, c, d]) => (
+                  <span key={k} className="flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${c}`} />{k}: {d}</span>
                 ))}
               </div>
+              <div className="max-h-96 space-y-1 overflow-y-auto pr-1">
+                {[...table.areas].sort((a, b) => b.weight - a.weight).map((a) => (
+                  <details key={a.area} className="group rounded-lg px-1.5 py-1 open:bg-white/[0.03]">
+                    <summary className="flex cursor-pointer list-none items-center gap-3 text-xs">
+                      <span className="w-6 text-right font-display text-white">{a.weight}</span>
+                      <div className="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-white/5">
+                        <div className="h-full bg-gradient-to-r from-violet-500 to-cyan-400" style={{ width: `${a.weight * 10}%` }} />
+                      </div>
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${a.confidence === 'high' ? 'bg-emerald-400' : a.confidence === 'medium' ? 'bg-amber-400' : 'bg-slate-500'}`} title={`Confidence: ${a.confidence}`} />
+                      <span className="min-w-0 truncate text-slate-300">{a.area}</span>
+                      <span className="ml-auto hidden shrink-0 text-slate-600 sm:inline">{a.subject}</span>
+                    </summary>
+                    <div className="ml-9 mt-1.5 space-y-1 pb-1 text-[11px] leading-relaxed text-slate-400">
+                      <div>{a.evidence}</div>
+                      {a.prior_weight != null && a.prior_weight !== a.weight && <div className="text-slate-500">Earlier estimate: {a.prior_weight} → now {a.weight}</div>}
+                    </div>
+                  </details>
+                ))}
+              </div>
+              {table.calibrated && (
+                <details className="mt-4 text-xs">
+                  <summary className="cursor-pointer text-slate-300">Sources & method</summary>
+                  <p className="mt-2 text-slate-500">{table.calibrated.method} Weight = 60% evidence + 40% earlier estimate. Recall papers are memory-based reconstructions, not official NBEMS papers.</p>
+                  <ul className="mt-2 space-y-1">
+                    {table.calibrated.sources.map((s) => (
+                      <li key={s.id}>
+                        <a className="text-violet-300 hover:text-violet-200" href={s.url} target="_blank" rel="noreferrer">{s.name}</a>
+                        <span className="text-slate-600"> · {s.kind}{s.questions ? ` · ${s.questions} questions` : ''}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
             </Card>
           )}
         </div>

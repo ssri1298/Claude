@@ -40,7 +40,7 @@ export default function RevisionQueue() {
           <span className={t.overdue > 0 ? 'text-rose-300' : t.due ? 'text-cyan-300' : ''}>{rel(t.overdue)}</span>
           <span>· {t.repetitions} recall{t.repetitions === 1 ? '' : 's'}</span>
           <span>· ease {t.ease}</span>
-          <YieldBadge weight={t.weight} />
+          <YieldBadge weight={t.weight} area={t.yield_area} />
         </div>
       </div>
       <button className="btn-icon" title="Add to today" onClick={() => addToday(t)} aria-label="Add to today"><CalendarPlus size={16} /></button>

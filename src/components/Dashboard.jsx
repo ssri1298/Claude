@@ -6,6 +6,7 @@ import { useApp } from '../store.jsx';
 import QuoteCard from './QuoteCard.jsx';
 import WelcomeCard from './WelcomeCard.jsx';
 import InboxBanner from './InboxBanner.jsx';
+import ModelUpdateCard from './ModelUpdateCard.jsx';
 import AgentFeed from './AgentFeed.jsx';
 import { StatusDonut, StudyTimeChart, SubjectBars, TopicsWeeklyChart } from './StudyCharts.jsx';
 import { Card, ProgressRing, Segmented, Skeleton, YieldBadge, fmtMin } from './ui.jsx';
@@ -48,6 +49,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <InboxBanner />
+      <ModelUpdateCard />
 
       <motion.div {...fade(0)}>
         <QuoteCard />
@@ -150,7 +152,7 @@ export default function Dashboard() {
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium text-white">{t.title}</div>
                       <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
-                        <YieldBadge weight={t.weight} /> {fmtMin(t.duration_min)}
+                        <YieldBadge weight={t.weight} area={t.yield_area} /> {fmtMin(t.duration_min)}
                       </div>
                     </div>
                   </li>

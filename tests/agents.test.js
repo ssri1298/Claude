@@ -17,7 +17,7 @@ const mk = () => {
 
 test('yield classify maps titles to NEET SS Surgical areas', () => {
   assert.equal(classify('Carcinoma Breast - Part 1').area, 'Breast cancer — management');
-  assert.equal(classify('Acute Pancreatitis').weight, 9);
+  assert.equal(classify('Acute Pancreatitis').area, 'Acute pancreatitis');
   assert.equal(classify('Laparoscopic cholecystectomy').area, 'Gallstones, cholecystitis & cholangitis');
   assert.equal(classify('Incisional hernia repair').area, 'Ventral, incisional hernia & abdominal wall');
   assert.equal(classify('Random intro video').area, 'Unclassified');
@@ -200,4 +200,46 @@ test('import: already-watched videos go to revision, duplicates are skipped, sec
   assert.equal(r2.ids.length, 1);
   day = '2026-11-08';
   assert.equal(agent.revisionQueue().filter((t) => t.due).length, 1);
+});
+
+test('yield model: calibrated weights stay 1–10 and every area records its evidence', async () => {
+  const { default: T } = await import('../core/data/neetss-surgical.js');
+  for (const a of T.areas) {
+    assert.ok(Number.isInteger(a.weight) && a.weight >= 1 && a.weight <= 10, a.area);
+    assert.ok(typeof a.evidence === 'string' && a.evidence.length > 10, a.area);
+    assert.ok(['high', 'medium', 'low'].includes(a.confidence), a.area);
+  }
+  assert.ok(T.calibrated.sources.length >= 3);
+});
+
+test('calibrate() is deterministic and blends evidence with the prior', async () => {
+  const { calibrate } = await import('../scripts/calibrate-yield.js');
+  const table = { areas: [
+    { area: 'A', weight: 5, keywords: [] },
+    { area: 'B', weight: 9, keywords: [] },
+    { area: 'C', weight: 6, keywords: [] },
+    { area: 'U', weight: 8, keywords: [], priority: true },
+  ] };
+  const ev = { checked: 'x', method: 'm', sources: [], recallTotals: { 2022: 150, 2023: 150 }, recall: { A: { 2022: 10, 2023: 10 }, B: { 2022: 0, 2023: 1 } }, mentions: { C: ['s1', 's2'] } };
+  const out = calibrate(table, ev);
+  const w = Object.fromEntries(out.areas.map((a) => [a.area, a.weight]));
+  assert.equal(w.A, 8); // evidence 10 · 0.6 + prior 5 · 0.4
+  assert.equal(w.B, 6); // ≈4.5 · 0.6 + 9 · 0.4 = 6.3
+  assert.equal(w.C, 4); // never asked, but 2 sources → 3 · 0.6 + 6 · 0.4 = 4.2
+  assert.equal(w.U, 8); // priority area untouched
+  assert.deepEqual(calibrate(out, ev).areas.map((a) => a.weight), out.areas.map((a) => a.weight)); // re-run uses prior_weight
+});
+
+test('rescore updates model weights but keeps manual overrides', () => {
+  const { agent, db } = mk();
+  const routes = createRoutes(agent);
+  agent.importTopics([{ title: 'Tetralogy of Fallot', duration_min: 30 }, { title: 'Breast: I', duration_min: 50 }]);
+  db.update('topics', (t) => t.title === 'Tetralogy of Fallot', { yield_weight: 1, yield_area: 'Old area' });
+  db.update('topics', (t) => t.title === 'Breast: I', { yield_override: 3 });
+  const r = dispatch(routes, 'POST', '/api/yield/rescore');
+  assert.equal(r.changed, 1);
+  const [tof, br] = db.all('topics');
+  assert.equal(tof.yield_area, 'Congenital heart disease');
+  assert.equal(br.yield_override, 3);
+  assert.equal(dispatch(routes, 'GET', '/api/settings').yieldModelSeen, r.version);
 });

@@ -68,6 +68,23 @@ export function createRoutes(agent) {
   on('GET', '/study-next', () => agent.studyNext());
   on('GET', '/yield/table', () => agent.bus.request('yield.table'));
   on('POST', '/yield/csv', ({ body }) => agent.bus.request('yield.importCsv', { csv: body.csv || '' }));
+  // Re-score every topic with the current yield model. Manual overrides (yield_override) are kept.
+  on('POST', '/yield/rescore', () => {
+    let changed = 0;
+    s.tx(() => {
+      for (const t of s.all('topics')) {
+        const c = agent.bus.request('yield.classify', { title: t.title, hint: t.section });
+        if (c.area !== t.yield_area || c.weight !== t.yield_weight) {
+          s.update('topics', t.id, { yield_area: c.area, yield_weight: c.weight, subject: c.subject });
+          changed++;
+        }
+      }
+    });
+    const version = agent.bus.request('yield.table').version || null;
+    saveSettings(s, { yieldModelSeen: version });
+    agent.bus.log('yield', 'topics.rescored', `${changed} topic(s) re-scored with the ${version} model (your manual overrides kept)`);
+    return { changed, version };
+  });
 
   // ── Revision ──
   on('GET', '/revision', () => agent.revisionQueue());

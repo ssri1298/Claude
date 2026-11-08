@@ -101,7 +101,7 @@ export default function LibraryPage() {
                 </div>
                 <div>
                   <div className="mb-1.5 flex items-center justify-between">
-                    <YieldBadge weight={t.weight} />
+                    <YieldBadge weight={t.weight} area={t.yield_area} />
                     {t.yield_override != null && (
                       <button className="text-[10px] text-slate-500 hover:text-slate-300" onClick={() => patch(t, { yield_override: null })}>reset</button>
                     )}

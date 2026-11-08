@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS = {
   examDate: null,
   pomodoro: { focus: 25, short: 5, long: 15, roundsBeforeLong: 4 },
   reminder: { enabled: true, time: '10:00' },
+  yieldModelSeen: null, // version of the topic-yield model the student has re-scored with (or dismissed)
 };
 
 export function getSettings(store) {

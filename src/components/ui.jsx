@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useYieldModel } from '../lib/yieldModel.js';
 
 export const fmtMin = (m) => {
   m = Math.round(m || 0);
@@ -30,7 +31,9 @@ export function SectionHeader({ eyebrow, title, subtitle, right }) {
   );
 }
 
-export function YieldBadge({ weight }) {
+export function YieldBadge({ weight, area }) {
+  const model = useYieldModel();
+  const info = area && model?.byArea?.[area];
   const w = Number(weight) || 0;
   const band = w >= 8 ? 'high' : w >= 5 ? 'medium' : 'low';
   const cls = {
@@ -39,7 +42,10 @@ export function YieldBadge({ weight }) {
     low: 'border-slate-500/30 bg-slate-500/10 text-slate-400',
   }[band];
   return (
-    <span className={`chip ${cls}`} title={`Past-exam frequency weight ${w}/10`}>
+    <span
+      className={`chip ${cls}`}
+      title={info ? `${area} · exam-frequency weight ${w}/10\n${info.evidence}\nConfidence: ${info.confidence}` : `Past-exam frequency weight ${w}/10`}
+    >
       {band === 'high' ? 'High yield' : band === 'medium' ? 'Med yield' : 'Low yield'} · {Math.round(w * 10) / 10}
     </span>
   );

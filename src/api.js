@@ -37,6 +37,7 @@ export const api = {
   studyNext: () => req('GET', '/study-next'),
   yieldTable: () => req('GET', '/yield/table'),
   yieldCsv: (csv) => req('POST', '/yield/csv', { csv }),
+  rescoreYield: () => req('POST', '/yield/rescore'),
   revision: () => req('GET', '/revision'),
   review: (topicId, rating, notes) => req('POST', '/reviews', { topicId, rating, notes }),
   month: (m) => req('GET', `/calendar/month/${m}`),

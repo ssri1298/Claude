@@ -1,0 +1,736 @@
+{
+ "checked": "2026-11-08",
+ "method": "Each question in the 2022–2024 recalls was mapped to a topic area with Scalpel’s classifier (429 questions, 4 unplaceable; a random 50 were hand-checked, about 92% correct). Topic-list and analysis sources contribute a small bonus when two or more name an area.",
+ "sources": [
+  {
+   "id": "dt-2022",
+   "name": "DocTutorials · NEET SS Surgery 2022 (memory-based recall, reworked)",
+   "url": "https://www.doctutorials.com/neet-ss/neet-ss-pyqs",
+   "year": 2022,
+   "kind": "recall",
+   "questions": 146
+  },
+  {
+   "id": "dt-2023",
+   "name": "DocTutorials · NEET SS Surgery 2023 (memory-based recall, reworked)",
+   "url": "https://www.doctutorials.com/neet-ss/neet-ss-pyqs",
+   "year": 2023,
+   "kind": "recall",
+   "questions": 144
+  },
+  {
+   "id": "dt-2024",
+   "name": "DocTutorials · NEET SS Surgery 2024 (memory-based recall, reworked)",
+   "url": "https://www.doctutorials.com/neet-ss/neet-ss-pyqs",
+   "year": 2024,
+   "kind": "recall",
+   "questions": 139
+  },
+  {
+   "id": "collegedunia-2025",
+   "name": "Collegedunia · NEET SS 2025 paper analysis",
+   "url": "https://collegedunia.com/exams/neet-ss/paper-analysis",
+   "year": 2025,
+   "kind": "analysis"
+  },
+  {
+   "id": "medicaldialogues-2025",
+   "name": "Medical Dialogues · NEET SS 2025 exam analysis",
+   "url": "https://medicaldialogues.in/news/education/medical-admissions/neet-ss-2025-exam-analysis-question-paper-difficulty-moderate-check-out-expected-cutoff-161683",
+   "year": 2025,
+   "kind": "analysis"
+  },
+  {
+   "id": "collegedekho-2025",
+   "name": "CollegeDekho · NEET SS 2025 paper analysis",
+   "url": "https://www.collegedekho.com/exam/neet-ss/paper-analysis",
+   "year": 2025,
+   "kind": "analysis"
+  },
+  {
+   "id": "testbook-2025",
+   "name": "Testbook · NEET SS 2025 subject-wise analysis",
+   "url": "https://testbook.com/news/neet-ss-2025-question-paper-subject-wise-analysis/",
+   "year": 2025,
+   "kind": "analysis"
+  },
+  {
+   "id": "duramater",
+   "name": "Duramater · NEET SS Surgical group guide",
+   "url": "https://www.duramater.in/neet-ss/surgery",
+   "year": 2026,
+   "kind": "topic-list"
+  },
+  {
+   "id": "conceptual-2026",
+   "name": "Conceptual Surgery · NEET SS 2026 General Surgery high-yield areas",
+   "url": "https://theconceptualsurgery.com/2026/07/20/neet-ss-2026-general-surgery-how-to-build-your-rank-while-surviving-residency/",
+   "year": 2026,
+   "kind": "topic-list"
+  },
+  {
+   "id": "mcqsurgery",
+   "name": "MCQ Surgery · NEET SS preparation tips (high-weightage topics)",
+   "url": "https://mcqsurgery.com/13-tips-to-prepare-for-neet-ss-25-surgery/",
+   "year": 2025,
+   "kind": "topic-list"
+  },
+  {
+   "id": "diginerve-topics",
+   "name": "DigiNerve · Important topics for NEET SS Surgery 2025",
+   "url": "https://www.diginerve.com/blogs/important-topics-for-neet-ss-surgery-in-2025/",
+   "year": 2025,
+   "kind": "topic-list"
+  },
+  {
+   "id": "diginerve-pattern",
+   "name": "DigiNerve · NEET SS Surgery expected pattern",
+   "url": "https://www.diginerve.com/blogs/neet-ss-surgery-2025-previous-year-questions-expected-pattern-pdf-download/",
+   "year": 2025,
+   "kind": "topic-list"
+  }
+ ],
+ "recallTotals": {
+  "2022": 146,
+  "2023": 144,
+  "2024": 139
+ },
+ "recall": {
+  "Gallbladder cancer & cholangiocarcinoma": {
+   "2022": 3,
+   "2023": 0,
+   "2024": 1
+  },
+  "Stomas & intestinal fistula": {
+   "2022": 1,
+   "2023": 0,
+   "2024": 0
+  },
+  "Liver tumours": {
+   "2022": 8,
+   "2023": 2,
+   "2024": 1
+  },
+  "Gallstones, cholecystitis & cholangitis": {
+   "2022": 12,
+   "2023": 4,
+   "2024": 8
+  },
+  "Chronic pancreatitis": {
+   "2022": 1,
+   "2023": 1,
+   "2024": 2
+  },
+  "Minimal access & robotic surgery": {
+   "2022": 1,
+   "2023": 0,
+   "2024": 2
+  },
+  "Pancreatic & periampullary cancer": {
+   "2022": 6,
+   "2023": 0,
+   "2024": 0
+  },
+  "Mesenteric ischaemia": {
+   "2022": 1,
+   "2023": 0,
+   "2024": 0
+  },
+  "Spleen": {
+   "2022": 1,
+   "2023": 1,
+   "2024": 1
+  },
+  "Portal hypertension & varices": {
+   "2022": 3,
+   "2023": 1,
+   "2024": 1
+  },
+  "Polyps & polyposis syndromes": {
+   "2022": 2,
+   "2023": 1,
+   "2024": 0
+  },
+  "Gastric cancer": {
+   "2022": 1,
+   "2023": 1,
+   "2024": 0
+  },
+  "Pyloric stenosis & intussusception": {
+   "2022": 1,
+   "2023": 0,
+   "2024": 2
+  },
+  "Acute pancreatitis": {
+   "2022": 2,
+   "2023": 1,
+   "2024": 0
+  },
+  "Fluids, electrolytes & acid–base": {
+   "2022": 2,
+   "2023": 0,
+   "2024": 1
+  },
+  "Bariatric & metabolic surgery": {
+   "2022": 1,
+   "2023": 1,
+   "2024": 0
+  },
+  "Bile duct injury & benign strictures": {
+   "2022": 1,
+   "2023": 1,
+   "2024": 1
+  },
+  "Peptic ulcer disease & complications": {
+   "2022": 1,
+   "2023": 1,
+   "2024": 0
+  },
+  "Oesophageal cancer": {
+   "2022": 3,
+   "2023": 1,
+   "2024": 0
+  },
+  "Aortic aneurysm & dissection": {
+   "2022": 4,
+   "2023": 0,
+   "2024": 4
+  },
+  "Transplant immunology & organ donation": {
+   "2022": 3,
+   "2023": 2,
+   "2024": 0
+  },
+  "Liver anatomy & physiology": {
+   "2022": 1,
+   "2023": 1,
+   "2024": 0
+  },
+  "Upper GI bleeding": {
+   "2022": 2,
+   "2023": 0,
+   "2024": 0
+  },
+  "Rectal prolapse, pilonidal & anal cancer": {
+   "2022": 1,
+   "2023": 0,
+   "2024": 2
+  },
+  "Colorectal cancer": {
+   "2022": 2,
+   "2023": 3,
+   "2024": 0
+  },
+  "Achalasia & oesophageal motility": {
+   "2022": 1,
+   "2023": 0,
+   "2024": 0
+  },
+  "Ulcerative colitis": {
+   "2022": 1,
+   "2023": 3,
+   "2024": 0
+  },
+  "Adrenal surgery": {
+   "2022": 2,
+   "2023": 0,
+   "2024": 3
+  },
+  "GIST & gastric lymphoma": {
+   "2022": 1,
+   "2023": 1,
+   "2024": 0
+  },
+  "Choledochal cyst": {
+   "2022": 2,
+   "2023": 1,
+   "2024": 1
+  },
+  "Flaps & skin grafts": {
+   "2022": 5,
+   "2023": 5,
+   "2024": 1
+  },
+  "Burns": {
+   "2022": 1,
+   "2023": 0,
+   "2024": 0
+  },
+  "Hand, upper limb & peripheral nerve surgery": {
+   "2022": 4,
+   "2023": 1,
+   "2024": 3
+  },
+  "Breast cancer — management": {
+   "2022": 7,
+   "2023": 5,
+   "2024": 15
+  },
+  "Vascular anomalies & haemangioma": {
+   "2022": 2,
+   "2023": 0,
+   "2024": 0
+  },
+  "Congenital limb, chest-wall & craniofacial anomalies": {
+   "2022": 1,
+   "2023": 1,
+   "2024": 2
+  },
+  "Cleft lip & palate": {
+   "2022": 1,
+   "2023": 1,
+   "2024": 1
+  },
+  "Surgical critical care & sepsis": {
+   "2022": 1,
+   "2023": 1,
+   "2024": 1
+  },
+  "Thyroid nodule & thyroid cancer": {
+   "2022": 7,
+   "2023": 7,
+   "2024": 7
+  },
+  "Surgical oncology principles": {
+   "2022": 1,
+   "2023": 8,
+   "2024": 0
+  },
+  "Brain & spinal tumours": {
+   "2022": 2,
+   "2023": 3,
+   "2024": 3
+  },
+  "Congenital GI anomalies": {
+   "2022": 1,
+   "2023": 6,
+   "2024": 1
+  },
+  "Paediatric tumours": {
+   "2022": 1,
+   "2023": 0,
+   "2024": 0
+  },
+  "Neurosurgery — ICP, neuroanatomy & neurocritical care": {
+   "2022": 3,
+   "2023": 5,
+   "2024": 0
+  },
+  "Spine, CVJ, spinal dysraphism & hydrocephalus": {
+   "2022": 2,
+   "2023": 1,
+   "2024": 6
+  },
+  "Head injury": {
+   "2022": 4,
+   "2023": 1,
+   "2024": 1
+  },
+  "Inguinal & femoral hernia": {
+   "2022": 2,
+   "2023": 3,
+   "2024": 0
+  },
+  "Renal cell carcinoma & renal masses": {
+   "2022": 2,
+   "2023": 2,
+   "2024": 2
+  },
+  "Testis & scrotum": {
+   "2022": 2,
+   "2023": 2,
+   "2024": 4
+  },
+  "Crohn disease": {
+   "2022": 1,
+   "2023": 1,
+   "2024": 0
+  },
+  "Urethra, penis & urological trauma": {
+   "2022": 2,
+   "2023": 0,
+   "2024": 2
+  },
+  "Prostate — BPH & cancer": {
+   "2022": 2,
+   "2023": 1,
+   "2024": 0
+  },
+  "Peripheral arterial disease & limb ischaemia": {
+   "2022": 2,
+   "2023": 2,
+   "2024": 8
+  },
+  "Venous disease & DVT": {
+   "2022": 2,
+   "2023": 1,
+   "2024": 5
+  },
+  "Congenital heart disease": {
+   "2022": 6,
+   "2023": 1,
+   "2024": 6
+  },
+  "Adult cardiac surgery — valves, CABG & tumours": {
+   "2022": 7,
+   "2023": 4,
+   "2024": 8
+  },
+  "Lung — cancer, abscess & bronchoscopy": {
+   "2022": 2,
+   "2023": 4,
+   "2024": 9
+  },
+  "Intestinal obstruction & volvulus": {
+   "2022": 1,
+   "2023": 3,
+   "2024": 0
+  },
+  "Thoracic trauma": {
+   "2022": 0,
+   "2023": 5,
+   "2024": 6
+  },
+  "Pelvic, vascular & extremity trauma": {
+   "2022": 0,
+   "2023": 2,
+   "2024": 1
+  },
+  "Abdominal trauma": {
+   "2022": 0,
+   "2023": 3,
+   "2024": 0
+  },
+  "Damage control & abdominal compartment syndrome": {
+   "2022": 0,
+   "2023": 2,
+   "2024": 0
+  },
+  "Shock & fluid resuscitation": {
+   "2022": 0,
+   "2023": 1,
+   "2024": 0
+  },
+  "Anaesthesia & pain basics": {
+   "2022": 0,
+   "2023": 3,
+   "2024": 0
+  },
+  "Preoperative assessment & risk": {
+   "2022": 0,
+   "2023": 1,
+   "2024": 1
+  },
+  "Ventral, incisional hernia & abdominal wall": {
+   "2022": 0,
+   "2023": 1,
+   "2024": 0
+  },
+  "Parathyroid & hyperparathyroidism": {
+   "2022": 0,
+   "2023": 3,
+   "2024": 0
+  },
+  "Neck masses & neck dissection": {
+   "2022": 0,
+   "2023": 2,
+   "2024": 0
+  },
+  "Undescended testis & hypospadias": {
+   "2022": 0,
+   "2023": 1,
+   "2024": 1
+  },
+  "Research methodology & biostatistics": {
+   "2022": 0,
+   "2023": 5,
+   "2024": 0
+  },
+  "MEN syndromes & neuroendocrine tumours": {
+   "2022": 0,
+   "2023": 1,
+   "2024": 0
+  },
+  "Maxillofacial trauma & reconstruction": {
+   "2022": 0,
+   "2023": 2,
+   "2024": 0
+  },
+  "ATLS — primary survey & airway": {
+   "2022": 0,
+   "2023": 2,
+   "2024": 1
+  },
+  "Carotid disease": {
+   "2022": 0,
+   "2023": 1,
+   "2024": 0
+  },
+  "Goitre & hyperthyroidism": {
+   "2022": 0,
+   "2023": 3,
+   "2024": 1
+  },
+  "Peritoneum, retroperitoneum & acute abdomen": {
+   "2022": 0,
+   "2023": 2,
+   "2024": 0
+  },
+  "Lymphatics & lymphoedema": {
+   "2022": 0,
+   "2023": 1,
+   "2024": 0
+  },
+  "Urolithiasis & urinary tract obstruction": {
+   "2022": 0,
+   "2023": 1,
+   "2024": 0
+  },
+  "GERD, hiatus hernia & Barrett": {
+   "2022": 0,
+   "2023": 2,
+   "2024": 0
+  },
+  "Oral cavity cancer": {
+   "2022": 0,
+   "2023": 1,
+   "2024": 0
+  },
+  "Kidney transplant": {
+   "2022": 0,
+   "2023": 1,
+   "2024": 1
+  },
+  "Benign breast disease": {
+   "2022": 0,
+   "2023": 0,
+   "2024": 5
+  },
+  "Blood transfusion & haemostasis": {
+   "2022": 0,
+   "2023": 0,
+   "2024": 1
+  },
+  "Pancreatic cystic & neuroendocrine tumours": {
+   "2022": 0,
+   "2023": 0,
+   "2024": 1
+  },
+  "Bladder cancer": {
+   "2022": 0,
+   "2023": 0,
+   "2024": 1
+  },
+  "Sutures, staplers & energy devices": {
+   "2022": 0,
+   "2023": 0,
+   "2024": 1
+  },
+  "CDH & tracheo-oesophageal fistula": {
+   "2022": 0,
+   "2023": 0,
+   "2024": 1
+  },
+  "Empyema, pneumothorax & chest drains": {
+   "2022": 0,
+   "2023": 0,
+   "2024": 1
+  }
+ },
+ "mentions": {
+  "Gastric cancer": [
+   "conceptual-2026",
+   "mcqsurgery"
+  ],
+  "GERD, hiatus hernia & Barrett": [
+   "conceptual-2026",
+   "diginerve-topics"
+  ],
+  "Gallstones, cholecystitis & cholangitis": [
+   "conceptual-2026"
+  ],
+  "Pancreatic & periampullary cancer": [
+   "conceptual-2026",
+   "diginerve-topics"
+  ],
+  "Liver abscess & hydatid disease": [
+   "conceptual-2026",
+   "diginerve-topics"
+  ],
+  "Portal hypertension & varices": [
+   "conceptual-2026"
+  ],
+  "Thyroid nodule & thyroid cancer": [
+   "conceptual-2026",
+   "diginerve-topics"
+  ],
+  "Parathyroid & hyperparathyroidism": [
+   "conceptual-2026"
+  ],
+  "Adrenal surgery": [
+   "conceptual-2026",
+   "diginerve-topics"
+  ],
+  "Breast cancer — management": [
+   "conceptual-2026",
+   "diginerve-topics",
+   "collegedunia-2025"
+  ],
+  "ATLS — primary survey & airway": [
+   "conceptual-2026",
+   "testbook-2025",
+   "collegedunia-2025"
+  ],
+  "Damage control & abdominal compartment syndrome": [
+   "conceptual-2026"
+  ],
+  "Shock & fluid resuscitation": [
+   "conceptual-2026"
+  ],
+  "Surgical nutrition": [
+   "conceptual-2026"
+  ],
+  "CDH & tracheo-oesophageal fistula": [
+   "conceptual-2026"
+  ],
+  "Congenital GI anomalies": [
+   "conceptual-2026",
+   "duramater"
+  ],
+  "Aortic aneurysm & dissection": [
+   "conceptual-2026",
+   "diginerve-pattern"
+  ],
+  "Peripheral arterial disease & limb ischaemia": [
+   "conceptual-2026",
+   "diginerve-pattern"
+  ],
+  "Venous disease & DVT": [
+   "conceptual-2026"
+  ],
+  "Thoracic trauma": [
+   "conceptual-2026",
+   "diginerve-topics"
+  ],
+  "Gallbladder cancer & cholangiocarcinoma": [
+   "mcqsurgery"
+  ],
+  "Flaps & skin grafts": [
+   "mcqsurgery",
+   "duramater"
+  ],
+  "Rectal prolapse, pilonidal & anal cancer": [
+   "mcqsurgery"
+  ],
+  "Benign breast disease": [
+   "diginerve-topics"
+  ],
+  "Goitre & hyperthyroidism": [
+   "diginerve-topics"
+  ],
+  "MEN syndromes & neuroendocrine tumours": [
+   "diginerve-topics"
+  ],
+  "Urolithiasis & urinary tract obstruction": [
+   "diginerve-topics"
+  ],
+  "Bladder cancer": [
+   "diginerve-topics"
+  ],
+  "Testis & scrotum": [
+   "diginerve-topics"
+  ],
+  "Head injury": [
+   "diginerve-topics"
+  ],
+  "Abdominal trauma": [
+   "diginerve-topics"
+  ],
+  "Achalasia & oesophageal motility": [
+   "diginerve-topics"
+  ],
+  "Oesophageal cancer": [
+   "diginerve-topics"
+  ],
+  "Upper GI bleeding": [
+   "diginerve-topics"
+  ],
+  "Colorectal cancer": [
+   "diginerve-topics"
+  ],
+  "Liver tumours": [
+   "diginerve-topics"
+  ],
+  "Chronic pancreatitis": [
+   "diginerve-topics"
+  ],
+  "Spleen": [
+   "diginerve-topics"
+  ],
+  "Salivary gland tumours": [
+   "diginerve-topics"
+  ],
+  "Oral cavity cancer": [
+   "diginerve-topics"
+  ],
+  "Neck masses & neck dissection": [
+   "diginerve-topics"
+  ],
+  "Burns": [
+   "diginerve-topics"
+  ],
+  "Skin tumours & melanoma": [
+   "diginerve-topics"
+  ],
+  "Cleft lip & palate": [
+   "diginerve-topics"
+  ],
+  "Soft tissue sarcoma": [
+   "diginerve-topics"
+  ],
+  "Surgical oncology principles": [
+   "diginerve-topics",
+   "diginerve-pattern",
+   "testbook-2025"
+  ],
+  "Adult cardiac surgery — valves, CABG & tumours": [
+   "diginerve-topics"
+  ],
+  "Minimal access & robotic surgery": [
+   "diginerve-topics"
+  ],
+  "Transplant immunology & organ donation": [
+   "diginerve-topics",
+   "diginerve-pattern",
+   "duramater"
+  ],
+  "Peritoneum, retroperitoneum & acute abdomen": [
+   "collegedunia-2025"
+  ],
+  "Research methodology & biostatistics": [
+   "duramater"
+  ]
+ },
+ "blocks": [
+  {
+   "source": "collegedunia-2025",
+   "label": "GI surgery & surgical oncology",
+   "questions": "12–16 of 150"
+  },
+  {
+   "source": "collegedunia-2025",
+   "label": "General surgery (trauma, acute abdomen, breast)",
+   "questions": "10–12 of 150"
+  },
+  {
+   "source": "medicaldialogues-2025",
+   "label": "Surgical oncology / GI surgery",
+   "questions": "9–11 of 150"
+  },
+  {
+   "source": "collegedekho-2025",
+   "label": "Surgical oncology / GI surgery",
+   "questions": "7–9%"
+  }
+ ]
+}
