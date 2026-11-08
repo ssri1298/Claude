@@ -5,7 +5,7 @@ import { api, IS_WEB } from '../api.js';
 import { takePrefill } from '../lib/prefill.js';
 import InboxBanner from './InboxBanner.jsx';
 import { useApp } from '../store.jsx';
-import { parseLessons, parseDuration, detectHeaders } from '../lib/parseLessons.js';
+import { parseLessons, parseDuration, detectHeaders, mergePasses, repairNumeralSequence } from '../lib/parseLessons.js';
 import { Card, SectionHeader, fmtMin } from './ui.jsx';
 
 let uid = 0;
@@ -47,7 +47,9 @@ export default function ImportScreenshots() {
       const kept = prev.filter((r) => !(r.source === 'ocr' && hdr.has(r.title.toLowerCase().replace(/[^a-z0-9]/g, ''))));
       const seen = new Set(kept.map(rowKey));
       const add = parsed.filter((p) => !seen.has(rowKey(p)));
-      return [...kept, ...add.map((p) => newRow({ ...p, source: 'ocr' }))];
+      // Parts listed in order (I, II, III) that OCR read with a repeated numeral are renumbered,
+      // but never rows the student already edited.
+      return repairNumeralSequence([...kept, ...add.map((p) => newRow({ ...p, source: 'ocr' }))]).map((r, i, all) => (r.edited ? { ...r, title: (kept.find((k) => k.key === r.key) || r).title } : r));
     });
 
   const addFiles = useCallback((files) => {
@@ -59,12 +61,19 @@ export default function ImportScreenshots() {
       queue.current = queue.current.then(async () => {
         const upd = (patch) => setImages((p) => p.map((x) => (x.id === it.id ? { ...x, ...patch } : x)));
         try {
-          const { recognize } = await import('../lib/ocr.js');
-          const text = await recognize(it.file, (progress, status) => upd({ progress, status }));
+          const { recognizeDetailed, SECOND_PASS } = await import('../lib/ocr.js');
+          const first = await recognizeDetailed(it.file, (progress, status) => upd({ progress: progress * 0.6, status: `${status} · pass 1 of 2` }));
+          const second = await recognizeDetailed(it.file, (progress, status) => upd({ progress: 0.6 + progress * 0.4, status: `${status} · pass 2 of 2` }), SECOND_PASS);
+          const text = first.text;
           texts.current.push(text);
           // The page title (e.g. the course name) repeats on every screenshot: ignore it.
           const headers = detectHeaders(texts.current);
-          const parsed = parseLessons(text, { ignore: headers });
+          // Words Tesseract was unsure about: rows containing them are highlighted for checking.
+          const unsure = new Set(first.words.filter((w) => w.confidence < 60 && /[a-z]{2}/i.test(w.text)).map((w) => w.text.toLowerCase().replace(/[^a-z0-9]/g, '')));
+          const parsed = mergePasses(parseLessons(text, { ignore: headers }), parseLessons(second.text, { ignore: headers })).map((r) => ({
+            ...r,
+            check: !!r.recovered || r.title.split(/\s+/).some((w) => unsure.has(w.toLowerCase().replace(/[^a-z0-9]/g, ''))),
+          }));
           upd({ text, status: 'Done', progress: 1, count: parsed.length });
           mergeRows(parsed, headers);
         } catch (e) {
@@ -84,7 +93,8 @@ export default function ImportScreenshots() {
     return () => window.removeEventListener('paste', onPaste);
   }, [addFiles]);
 
-  const update = (key, patch) => setRows((r) => r.map((x) => (x.key === key ? { ...x, ...patch } : x)));
+  const update = (key, patch) =>
+    setRows((r) => r.map((x) => (x.key === key ? { ...x, ...patch, ...('title' in patch || 'duration_min' in patch ? { edited: true, check: false } : {}) } : x)));
   const included = rows.filter((r) => r.include && r.title.trim());
   const totalMin = included.reduce((a, b) => a + (Number(b.duration_min) || 0), 0);
 
@@ -229,6 +239,12 @@ export default function ImportScreenshots() {
                 </div>
               )}
               <div className="max-h-[560px] overflow-y-auto pr-1">
+                {rows.some((r) => r.check) && (
+                  <p className="mb-3 flex items-center gap-2 rounded-lg border border-amber-400/20 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-200">
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
+                    {rows.filter((r) => r.check).length} highlighted row{rows.filter((r) => r.check).length === 1 ? '' : 's'}: the reader was less sure there. Give them a quick look.
+                  </p>
+                )}
                 <div className="mb-2 hidden grid-cols-[28px_1fr_110px_64px_36px] gap-2 px-1 text-[11px] uppercase tracking-widest text-slate-600 sm:grid">
                   <span />
                   <span>Topic</span>
@@ -242,7 +258,13 @@ export default function ImportScreenshots() {
                       {r.section && r.section !== rows[i - 1]?.section && <div className="label mb-1.5 mt-3 px-1 text-violet-300/70 first:mt-0">{r.section}</div>}
                       <div className={`grid grid-cols-[28px_1fr_78px_44px_32px] items-center gap-2 sm:grid-cols-[28px_1fr_110px_64px_36px] ${r.include ? '' : 'opacity-40'}`}>
                       <input type="checkbox" className="h-4 w-4 accent-violet-500" checked={r.include} onChange={(e) => update(r.key, { include: e.target.checked })} aria-label="Include" />
-                      <input className="input !py-2" value={r.title} placeholder="Topic title" onChange={(e) => update(r.key, { title: e.target.value })} />
+                      <input
+                        className={`input !py-2 ${r.check ? '!border-amber-400/50 !bg-amber-500/[0.06]' : ''}`}
+                        value={r.title}
+                        placeholder="Topic title"
+                        title={r.check ? (r.recovered ? 'Found only by the second reading pass: check the title and length' : 'The reader was unsure of a word here: check the spelling') : undefined}
+                        onChange={(e) => update(r.key, { title: e.target.value })}
+                      />
                       <div className="relative">
                         <input
                           className="input !py-2 pr-9"

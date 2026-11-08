@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDuration, parseLessons, cleanTitle, detectHeaders } from '../src/lib/parseLessons.js';
+import { parseDuration, parseLessons, cleanTitle, detectHeaders, mergePasses, repairNumeralSequence, fixRomanNumerals } from '../src/lib/parseLessons.js';
 
 test('parseDuration handles common formats', () => {
   assert.equal(parseDuration('1:05:30'), 66);
@@ -93,4 +93,30 @@ test('detectHeaders finds the page title repeated across screenshots', () => {
 
 test('same title with different lengths is kept (Part II vs misread Part III)', () => {
   assert.equal(parseLessons('Breast : ll\n4.7 71 Min\n\nBreast : ll\n4.7 60 Min').length, 2);
+});
+
+test('mergePasses only fills gaps between rows the first pass found side by side', () => {
+  const a = [{ title: 'Intestinal Obstruction II', duration_min: 37 }, { title: 'Appendix and its Disorders', duration_min: 53 }];
+  const b = [
+    { title: 'DOESN Wr', duration_min: 45 }, // header noise above the list: rejected
+    { title: 'Intestinal Obstruction Il', duration_min: 37 },
+    { title: 'Small & Large Bowel - Benign Conditions', duration_min: 75 },
+    { title: 'Appendix and its Disorders', duration_min: 53 },
+  ];
+  const r = mergePasses(a, b);
+  assert.deepEqual(r.map((x) => x.title), ['Intestinal Obstruction II', 'Small & Large Bowel - Benign Conditions', 'Appendix and its Disorders']);
+  assert.equal(r[1].recovered, true);
+});
+
+test('repairNumeralSequence renumbers repeated parts in order, leaves correct runs alone', () => {
+  const r = repairNumeralSequence([
+    { title: 'Breast: I', duration_min: 51 }, { title: 'Breast: II', duration_min: 71 }, { title: 'Breast: II', duration_min: 60 },
+    { title: 'Liver I', duration_min: 67 }, { title: 'Liver II', duration_min: 60 },
+    { title: 'Spleen', duration_min: 39 },
+  ]);
+  assert.deepEqual(r.map((x) => x.title), ['Breast: I', 'Breast: II', 'Breast: III', 'Liver I', 'Liver II', 'Spleen']);
+});
+
+test('GI is not misread as Gl', () => {
+  assert.equal(fixRomanNumerals('Upper Gl Hemorrhage'), 'Upper GI Hemorrhage');
 });

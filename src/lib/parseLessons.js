@@ -72,7 +72,9 @@ function isChrome(raw, cleaned) {
 // OCR often reads Roman numerals I / II / III as "|", "l", "ll" or "li". Fix them when they
 // stand alone at the end of a title or before ":" / ")".
 export function fixRomanNumerals(s) {
-  return String(s).replace(/(^|[\s:(\-–])([|lI]{1,3}|li|Il|lI)(?=\s*(?:$|[:)\-–,]))/g, (_, pre, tok) => pre + 'I'.repeat(tok.length));
+  return String(s)
+    .replace(/\bG[l|1](?=\b)/g, 'GI') // "Upper Gl Hemorrhage" → GI
+    .replace(/(^|[\s:(\-–])([|lI]{1,3}|li|Il|lI)(?=\s*(?:$|[:)\-–,]))/g, (_, pre, tok) => pre + 'I'.repeat(tok.length));
 }
 
 /**
@@ -155,4 +157,66 @@ export function detectHeaders(texts) {
   }
   const min = Math.max(2, Math.ceil(texts.length / 2));
   return [...counts].filter(([, n]) => n >= min).map(([c]) => c);
+}
+
+const normKey = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+function similar(a, b) {
+  const A = normKey(a), B = normKey(b);
+  if (!A || !B) return 0;
+  if (A === B) return 1;
+  const grams = (s) => { const m = new Map(); for (let i = 0; i < s.length - 1; i++) m.set(s.slice(i, i + 2), (m.get(s.slice(i, i + 2)) || 0) + 1); return m; };
+  const ga = grams(A), gb = grams(B);
+  let hit = 0;
+  for (const [g, n] of ga) hit += Math.min(n, gb.get(g) || 0);
+  return (2 * hit) / (A.length + B.length - 2 || 1);
+}
+
+/**
+ * Merge a second OCR pass (different image scale) into the first pass of the same screenshot.
+ * A second-pass row is added only when it fills a gap: the rows just before and after it were
+ * both found by the first pass, next to each other. That recovers a lesson the first pass
+ * dropped without letting header noise or misreads in.
+ */
+export function mergePasses(primary, secondary) {
+  const matchIdx = (r) => primary.findIndex((p) => p.duration_min === r.duration_min && similar(p.title, r.title) >= 0.6);
+  const out = primary.map((r) => ({ ...r }));
+  const inserts = []; // [afterPrimaryIndex, row]
+  for (let i = 1; i < secondary.length - 1; i++) {
+    if (matchIdx(secondary[i]) !== -1) continue;
+    const before = matchIdx(secondary[i - 1]);
+    const after = matchIdx(secondary[i + 1]);
+    if (before !== -1 && after === before + 1) inserts.push([before, { ...secondary[i], recovered: true }]);
+  }
+  for (const [at, row] of inserts.reverse()) out.splice(at + 1, 0, row);
+  return out;
+}
+
+/**
+ * Course lists number parts in order (I, II, III). When OCR repeats a numeral for consecutive
+ * parts of the same title ("Breast: I", "Breast: II", "Breast: II"), renumber them in order.
+ */
+export function repairNumeralSequence(rows) {
+  const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
+  const split = (t) => {
+    const m = String(t).match(/^(.*?)[\s:]*\b(I{1,3}|IV|V|VI{0,3})\s*$/);
+    return m ? { base: normKey(m[1]), num: ROMAN.indexOf(m[2]) + 1 } : null;
+  };
+  const out = rows.map((r) => ({ ...r }));
+  let i = 0;
+  while (i < out.length) {
+    const first = split(out[i].title);
+    if (!first) { i++; continue; }
+    let j = i + 1;
+    while (j < out.length && split(out[j].title)?.base === first.base) j++;
+    const run = out.slice(i, j).map((r) => split(r.title));
+    const increasing = run.every((p, k) => k === 0 || p.num > run[k - 1].num);
+    if (run.length > 1 && !increasing && run[0].num === 1) {
+      for (let k = 0; k < run.length; k++) {
+        out[i + k].title = out[i + k].title.replace(/\b(I{1,3}|IV|V|VI{0,3})\s*$/, ROMAN[k]);
+        out[i + k].renumbered = true;
+      }
+    }
+    i = j;
+  }
+  return out;
 }
