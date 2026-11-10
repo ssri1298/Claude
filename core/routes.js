@@ -19,6 +19,7 @@ export function createRoutes(agent) {
   on('GET', '/today', () => agent.getToday());
   on('POST', '/day/start', ({ body }) => agent.startDay(body));
   on('PUT', '/plan/items', ({ body }) => agent.updatePlanItems(body.items || []));
+  on('PUT', '/plan/speed', ({ body }) => agent.setPlanSpeed(body.speed));
   on('GET', '/plan/item-cost', ({ query }) => agent.itemFor(Number(query.topicId), query.kind || 'new'));
   on('POST', '/plan/finalize', () => agent.finalizePlan());
   on('POST', '/day/reset', () => agent.resetDay());

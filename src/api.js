@@ -18,7 +18,8 @@ async function req(method, url, body) {
 
 export const api = {
   today: () => req('GET', '/today'),
-  startDay: (availableMin, startTime, replan = false) => req('POST', '/day/start', { availableMin, startTime, replan }),
+  startDay: (availableMin, startTime, replan = false, speed) => req('POST', '/day/start', { availableMin, startTime, replan, speed }),
+  setPlanSpeed: (speed) => req('PUT', '/plan/speed', { speed }),
   updatePlan: (items) => req('PUT', '/plan/items', { items }),
   itemCost: (topicId, kind) => req('GET', `/plan/item-cost?topicId=${topicId}&kind=${kind}`),
   finalize: () => req('POST', '/plan/finalize'),

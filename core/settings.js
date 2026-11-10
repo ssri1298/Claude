@@ -1,6 +1,7 @@
 export const DEFAULT_SETTINGS = {
   revisionShare: 0.3,
   durationMultiplier: 1.25,
+  playbackSpeed: 1, // video speed you watch lectures at (1–2×); the last one chosen at check-in
   breakBufferPct: 0.1,
   recallMinutes: 12,
   lowYieldThreshold: 3,

@@ -1,7 +1,10 @@
 import { effectiveWeight, rankTopics } from './yieldAgent.js';
 import { diffDays } from '../dates.js';
 
-export const studyCost = (t, multiplier) => Math.max(5, Math.ceil((t.duration_min || 0) * multiplier));
+export const SPEEDS = [1, 1.25, 1.5, 1.75, 2];
+export const cleanSpeed = (s) => (SPEEDS.includes(Number(s)) ? Number(s) : 1);
+/** Minutes to budget for a video: watched at `speed`, plus the pause/notes multiplier. */
+export const studyCost = (t, multiplier, speed = 1) => Math.max(5, Math.ceil(((t.duration_min || 0) / cleanSpeed(speed)) * multiplier));
 export const recallCost = (t, base) => base + (effectiveWeight(t) >= 8 ? 3 : 0);
 
 /**
@@ -36,13 +39,13 @@ export function planDay({ availableMin, settings, ranked, due, date }) {
   const newBudget = effective - revUsed;
   let newUsed = 0;
   for (const t of ranked) {
-    const m = studyCost(t, settings.durationMultiplier);
+    const m = studyCost(t, settings.durationMultiplier, settings.playbackSpeed);
     if (newUsed + m > newBudget) continue;
     items.push({ topic_id: t.id, kind: 'new', minutes: m, title: t.title });
     newUsed += m;
   }
   if (ranked.length && !items.some((i) => i.kind === 'new')) {
-    notes.push(`Next topic "${ranked[0].title}" needs ~${studyCost(ranked[0], settings.durationMultiplier)} min — more than today's free time. Consider splitting it.`);
+    notes.push(`Next topic "${ranked[0].title}" needs ~${studyCost(ranked[0], settings.durationMultiplier, settings.playbackSpeed)} min — more than today's free time. Consider splitting it.`);
   }
   if (!ranked.length) notes.push('No pending new topics — import more screenshots or continue revision.');
 

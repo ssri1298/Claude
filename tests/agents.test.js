@@ -243,3 +243,31 @@ test('rescore updates model weights but keeps manual overrides', () => {
   assert.equal(br.yield_override, 3);
   assert.equal(dispatch(routes, 'GET', '/api/settings').yieldModelSeen, r.version);
 });
+
+test('video speed: cost scales with speed, plans fit more, draft speed can change, choice is remembered', async () => {
+  const { studyCost } = await import('../core/agents/plannerAgent.js');
+  const t = { duration_min: 60 };
+  assert.equal(studyCost(t, 1.25, 1), 75);
+  assert.equal(studyCost(t, 1.25, 1.5), 50);
+  assert.equal(studyCost(t, 1.25, 2), 38);
+  assert.equal(studyCost(t, 1.25, 3), 75); // unsupported speeds fall back to 1×
+
+  day = '2026-11-10';
+  const topics = Array.from({ length: 8 }, (_, i) => ({ title: `Topic ${i}`, duration_min: 60 }));
+  const a = mk();
+  a.agent.importTopics(topics);
+  const slow = a.agent.startDay({ availableMin: 240 }).plan.items.length;
+  const b = mk();
+  b.agent.importTopics(topics);
+  const fast = b.agent.startDay({ availableMin: 240, speed: 1.5 }).plan;
+  assert.ok(fast.items.length > slow, `${fast.items.length} > ${slow}`);
+  assert.equal(fast.speed, 1.5);
+  assert.equal(b.agent.settings.playbackSpeed, 1.5); // remembered for the next check-in
+
+  const routes = createRoutes(b.agent);
+  const at2 = dispatch(routes, 'PUT', '/api/plan/speed', { speed: 2 });
+  assert.ok(at2.items.filter((i) => i.kind === 'new').every((i) => i.minutes === 38));
+  assert.equal(b.agent.itemFor(at2.items[0].topic_id, 'new').minutes, 38); // added topics use the plan's speed
+  b.agent.finalizePlan();
+  assert.throws(() => dispatch(routes, 'PUT', '/api/plan/speed', { speed: 1 }), /finalized/);
+});

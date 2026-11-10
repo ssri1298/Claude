@@ -193,3 +193,27 @@ export function ConfirmButton({ onConfirm, children, confirmLabel = 'Click again
     </button>
   );
 }
+
+export const SPEEDS = [1, 1.25, 1.5, 1.75, 2];
+export const fmtSpeed = (s) => `${Number(s || 1)}×`;
+
+/** Video playback speed chips (1× – 2×). */
+export function SpeedPicker({ value, onChange, disabled = false, id = 'speed' }) {
+  return (
+    <div role="radiogroup" aria-label="Video speed" id={id} className="flex flex-wrap gap-1.5">
+      {SPEEDS.map((s) => (
+        <button
+          key={s}
+          type="button"
+          role="radio"
+          aria-checked={Number(value) === s}
+          disabled={disabled}
+          onClick={() => onChange(s)}
+          className={`chip cursor-pointer px-3 py-1 text-xs font-display transition ${Number(value) === s ? 'border-violet-400/50 bg-violet-500/20 text-white' : 'border-white/10 text-slate-400 hover:text-white'} disabled:cursor-not-allowed disabled:opacity-40`}
+        >
+          {fmtSpeed(s)}
+        </button>
+      ))}
+    </div>
+  );
+}

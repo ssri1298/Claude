@@ -1,6 +1,6 @@
 import { AgentBus } from './bus.js';
 import { YieldAgent } from './yieldAgent.js';
-import { PlannerAgent, studyCost, recallCost } from './plannerAgent.js';
+import { PlannerAgent, studyCost, recallCost, cleanSpeed } from './plannerAgent.js';
 import { TodoAgent } from './todoAgent.js';
 import { CalendarAgent, studiedMinutesByDay } from './calendarAgent.js';
 import { getSettings, saveSettings } from '../settings.js';
@@ -96,7 +96,7 @@ export class StudyAgent {
     };
   }
 
-  startDay({ availableMin, startTime = '09:00', replan = false }) {
+  startDay({ availableMin, startTime = '09:00', replan = false, speed }) {
     const date = this.today();
     this.rollover(date);
     availableMin = Math.round(Number(availableMin));
@@ -107,7 +107,10 @@ export class StudyAgent {
       if (!replan) throw new HttpError(409, 'Today is already planned');
       this.resetDay();
     }
-    const settings = this.settings;
+    const playbackSpeed = cleanSpeed(speed ?? this.settings.playbackSpeed);
+    // Remember the speed so tomorrow's check-in starts from it.
+    if (playbackSpeed !== this.settings.playbackSpeed) saveSettings(this.store, { playbackSpeed });
+    const settings = { ...this.settings, playbackSpeed };
     const draft = this.bus.request('planner.draft', { date, availableMin, settings });
     this.store.tx(() => {
       const old = this.planRow(date);
@@ -115,7 +118,7 @@ export class StudyAgent {
         this.store.remove('plan_items', (pi) => pi.plan_id === old.id);
         this.store.remove('plans', old.id);
       }
-      const planId = this.store.insert('plans', { date, available_min: availableMin, start_time: startTime, revision_share: settings.revisionShare, status: 'draft', notes: draft.summary.notes });
+      const planId = this.store.insert('plans', { date, available_min: availableMin, start_time: startTime, revision_share: settings.revisionShare, status: 'draft', notes: draft.summary.notes, speed: playbackSpeed });
       this.insertItems(planId, draft.items);
     });
     this.bus.log('orchestrator', 'day.started', `${availableMin} min available from ${startTime}`);
@@ -135,11 +138,35 @@ export class StudyAgent {
   }
 
   /** Cost of adding a topic to a draft (used by the plan builder's "add" picker). */
+  /** Video speed for a day: the speed its plan was made with, else the remembered one. */
+  speedFor(date = this.today()) {
+    return cleanSpeed(this.planRow(date)?.speed ?? this.settings.playbackSpeed);
+  }
+
+  /** Change the video speed of today's draft plan and recompute its new-video minutes. */
+  setPlanSpeed(speed) {
+    const date = this.today();
+    const plan = this.planRow(date);
+    if (!plan) throw new HttpError(404, 'No plan for today');
+    if (plan.status === 'final') throw new HttpError(409, 'Plan already finalized — re-plan to change the video speed');
+    const playbackSpeed = cleanSpeed(speed);
+    const mult = this.settings.durationMultiplier;
+    this.store.tx(() => {
+      this.store.update('plans', plan.id, { speed: playbackSpeed });
+      for (const pi of this.store.all('plan_items', (x) => x.plan_id === plan.id && x.kind === 'new')) {
+        const t = this.store.get('topics', pi.topic_id);
+        if (t) this.store.update('plan_items', pi.id, { minutes: studyCost(t, mult, playbackSpeed) });
+      }
+      saveSettings(this.store, { playbackSpeed });
+    });
+    return this.plan(date);
+  }
+
   itemFor(topicId, kind) {
     const t = this.store.get('topics', topicId);
     if (!t) throw new HttpError(404, 'Topic not found');
     const s = this.settings;
-    return { topic_id: t.id, kind, title: t.title, minutes: kind === 'revision' ? recallCost(t, s.recallMinutes) : studyCost(t, s.durationMultiplier) };
+    return { topic_id: t.id, kind, title: t.title, minutes: kind === 'revision' ? recallCost(t, s.recallMinutes) : studyCost(t, s.durationMultiplier, this.speedFor()) };
   }
 
   finalizePlan() {
@@ -200,7 +227,7 @@ export class StudyAgent {
     const date = this.today();
     if (!['new', 'revision'].includes(mode)) throw new HttpError(400, 'mode must be new or revision');
     minutes = Math.max(10, Math.min(8 * 60, Math.round(Number(minutes))));
-    const ext = this.bus.request('planner.extend', { date, mode, minutes, settings: this.settings });
+    const ext = this.bus.request('planner.extend', { date, mode, minutes, settings: { ...this.settings, playbackSpeed: this.speedFor(date) } });
     if (!ext.items.length) return { added: 0, notes: ext.summary.notes.length ? ext.summary.notes : ['Nothing fits in that time.'], todos: this.bus.request('todo.list', { date }) };
     return { ...this.addItemsToDay(date, ext.items), notes: ext.summary.notes };
   }

@@ -4,7 +4,7 @@ import { BrainCircuit, Check, ChevronDown, ChevronUp, Minus, Plus, RefreshCcw, S
 import { api } from '../api.js';
 import { useApp } from '../store.jsx';
 import RecallModal from './RecallModal.jsx';
-import { Card, Empty, KindBadge, ProgressRing, SectionHeader, YieldBadge, fmtMin } from './ui.jsx';
+import { Card, Empty, KindBadge, ProgressRing, SectionHeader, SpeedPicker, YieldBadge, fmtMin, fmtSpeed } from './ui.jsx';
 
 export const linkPomodoro = (todo) => window.dispatchEvent(new CustomEvent('pomodoro:link', { detail: todo }));
 
@@ -77,6 +77,17 @@ function PlanBuilder({ plan }) {
     }
   };
 
+  const changeSpeed = async (speed) => {
+    clearTimeout(saveTimer.current);
+    try {
+      await api.updatePlan(items);
+      await api.setPlanSpeed(speed);
+      await refresh();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+
   const inPlan = new Set(items.map((i) => `${i.kind}:${i.topic_id}`));
   const notes = plan.notes || [];
 
@@ -93,6 +104,11 @@ function PlanBuilder({ plan }) {
           <span className="chip border-amber-400/30 bg-amber-500/10 text-amber-200">Review, reorder, then finalize</span>
         </div>
         <SplitBar items={items} available={plan.available_min} />
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <span className="label">Video speed</span>
+          <SpeedPicker value={plan.speed || 1} onChange={changeSpeed} id="draft-speed" />
+          <span className="text-[11px] text-slate-500">New-video blocks are re-timed for the speed you pick.</span>
+        </div>
 
         <ul className="mt-6 space-y-2.5">
           <AnimatePresence initial={false}>
@@ -178,7 +194,7 @@ function PlanBuilder({ plan }) {
         <ul className="space-y-3 text-sm text-slate-400">
           <li className="flex gap-2.5"><BrainCircuit size={16} className="mt-0.5 shrink-0 text-cyan-300" /> Overdue recalls go first so memories don’t decay (spaced repetition 1 → 3 → 7 → 14+ days).</li>
           <li className="flex gap-2.5"><Sparkles size={16} className="mt-0.5 shrink-0 text-violet-300" /> New videos are picked by past NEET SS frequency, then length, then course order.</li>
-          <li className="flex gap-2.5"><Timer size={16} className="mt-0.5 shrink-0 text-amber-300" /> Video time × {plan.multiplier ?? '1.25'} for pausing and notes, plus a break buffer.</li>
+          <li className="flex gap-2.5"><Timer size={16} className="mt-0.5 shrink-0 text-amber-300" /> Video length ÷ {fmtSpeed(plan.speed || 1)} playback speed, × {plan.multiplier ?? '1.25'} for pausing and notes, plus a break buffer.</li>
           <li className="flex gap-2.5"><ListChecks size={16} className="mt-0.5 shrink-0 text-emerald-300" /> Finalizing hands the list to the To-do and Calendar subagents.</li>
         </ul>
       </Card>
@@ -232,7 +248,7 @@ function Celebration() {
   );
 }
 
-function TodoList({ todos, events }) {
+function TodoList({ todos, events, speed = 1 }) {
   const { refresh, toast } = useApp();
   const [recall, setRecall] = useState(null);
   const slot = useMemo(() => Object.fromEntries(events.filter((e) => e.todo_id && e.kind !== 'pomodoro').map((e) => [e.todo_id, e])), [events]);
@@ -301,7 +317,7 @@ function TodoList({ todos, events }) {
                       <div className={`truncate text-sm font-medium transition ${isDone ? 'text-slate-500 line-through decoration-slate-600' : 'text-white'}`}>{td.title}</div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
                         {ev && <span className="font-display text-slate-400">{ev.start}–{ev.end}</span>}
-                        <span>{fmtMin(td.minutes)}</span>
+                        <span>{fmtMin(td.minutes)}{td.kind === 'new' && speed !== 1 ? ` · ${fmtSpeed(speed)}` : ''}</span>
                         {td.weight != null && <YieldBadge weight={td.weight} area={td.yield_area} />}
                       </div>
                     </div>
@@ -401,7 +417,7 @@ export default function TodayPage() {
           {allDone && <Celebration />}
           <div className="grid gap-5 lg:grid-cols-3">
             <div className="lg:col-span-2">
-              <TodoList todos={todos} events={events} />
+              <TodoList todos={todos} events={events} speed={plan.speed || 1} />
             </div>
             <DayTimeline events={events} />
           </div>

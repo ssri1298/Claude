@@ -10,7 +10,9 @@ const CHUNK = 60000; // characters per stored document (well under the 256 KiB d
 const TAB = Math.random().toString(36).slice(2);
 
 let ready = null;
-let cloudDb = null; // the website database, when available (used for Claude's inbox)
+let cloudDb = null; // the website database, for the owner only (Claude's inbox)
+let owner = false;
+export const isOwnerView = () => owner;
 const statusListeners = new Set();
 let status = { mode: 'loading', saving: false, error: null };
 const setStatus = (patch) => {
@@ -104,8 +106,12 @@ async function init() {
     if (c?.use) {
       const [db, user] = await Promise.all([c.use('db'), c.use('user')]);
       const uid = db && user ? await user.id() : null;
-      if (db) cloudDb = db;
-      if (db && uid) {
+      // People the page is shared with (outside viewers) can't save to the site: their own
+      // Scalpel lives in their browser. Only the owner sees Claude's inbox.
+      const canWrite = user?.can ? await user.can('data.write').catch(() => null) : null;
+      owner = user?.isOwner ? await user.isOwner().catch(() => false) : false;
+      if (db && owner) cloudDb = db;
+      if (db && uid && canWrite !== false) {
         adapter = cloudAdapter(db, uid);
         mode = 'cloud';
       }
@@ -151,7 +157,15 @@ async function init() {
     saving = adapter
       .save(json)
       .then(() => setStatus({ saving: false, error: null, savedAt: new Date() }))
-      .catch((e) => setStatus({ saving: false, error: e?.code === 'quota_exceeded' ? 'Your saved data is full. Export a backup and remove old topics.' : 'Changes could not be saved to your account. They are kept in this browser for now.' }));
+      .catch((e) => {
+        if (e?.code === 'invalid_argument' && !owner) {
+          // This viewer may not save to the site: keep their Scalpel in this browser instead.
+          adapter = null;
+          setStatus({ saving: false, error: null, mode: 'browser' });
+          return;
+        }
+        setStatus({ saving: false, error: e?.code === 'quota_exceeded' ? 'Your saved data is full. Export a backup and remove old topics.' : 'Changes could not be saved to your account. They are kept in this browser for now.' });
+      });
     await saving;
     saving = null;
     if (dirty) {
@@ -181,7 +195,7 @@ async function init() {
     window.dispatchEvent(new Event('scalpel:remote-update'));
   });
 
-  setStatus({ mode });
+  setStatus({ mode, owner });
   return { routes };
 }
 

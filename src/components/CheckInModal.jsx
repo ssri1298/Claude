@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Sun, Wand2, Minus, Plus } from 'lucide-react';
-import { Modal, fmtMin } from './ui.jsx';
+import { Modal, SpeedPicker, fmtMin, fmtSpeed } from './ui.jsx';
 import { useApp } from '../store.jsx';
 import { api } from '../api.js';
 
@@ -17,10 +17,14 @@ export default function CheckInModal() {
   const { checkInOpen, setCheckInOpen, today, refresh, navigate, toast } = useApp();
   const [minutes, setMinutes] = useState(240);
   const [start, setStart] = useState('09:00');
+  const [speed, setSpeed] = useState(1);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (checkInOpen) setStart(nextQuarter());
+    if (checkInOpen) {
+      setStart(nextQuarter());
+      setSpeed(today?.settings?.playbackSpeed || 1);
+    }
   }, [checkInOpen]);
 
   const close = () => {
@@ -34,7 +38,7 @@ export default function CheckInModal() {
     setBusy(true);
     try {
       const replan = today?.plan?.status === 'final';
-      const r = await api.startDay(minutes, start, replan);
+      const r = await api.startDay(minutes, start, replan, speed);
       await refresh();
       setCheckInOpen(false);
       navigate('today');
@@ -48,6 +52,9 @@ export default function CheckInModal() {
 
   const h = Math.floor(minutes / 60), m = minutes % 60;
   const share = today?.settings?.revisionShare ?? 0.3;
+  const mult = today?.settings?.durationMultiplier ?? 1.25;
+  // Lecture time that fits in the new-video share at this speed (after pauses/notes).
+  const lecture = ((minutes * 0.9 * (1 - share)) / mult) * speed;
 
   return (
     <Modal open={checkInOpen} onClose={close} width="max-w-xl">
@@ -84,6 +91,14 @@ export default function CheckInModal() {
             {fmtMin(p)}
           </button>
         ))}
+      </div>
+
+      <div className="mt-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <span className="label">Video speed</span>
+          <span className="text-[11px] text-slate-400">≈ {fmtMin(lecture)} of lectures fit at {fmtSpeed(speed)}</span>
+        </div>
+        <div className="mt-2"><SpeedPicker value={speed} onChange={setSpeed} id="checkin-speed" /></div>
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2">

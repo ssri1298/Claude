@@ -3,8 +3,9 @@ import { BellRing, Download, FileUp, Save } from 'lucide-react';
 import { permission, requestPermission, showPlanNotification } from '../lib/reminder.js';
 import { api, IS_WEB } from '../api.js';
 import { useApp } from '../store.jsx';
-import { Card, SectionHeader } from './ui.jsx';
+import { Card, SectionHeader, SpeedPicker } from './ui.jsx';
 import SaveStatus from './SaveStatus.jsx';
+import ShareCard from './ShareCard.jsx';
 
 function Field({ label, hint, children }) {
   return (
@@ -91,6 +92,14 @@ export default function Settings() {
           <Field label="Share of time for active recall" hint={`${Math.round(s.revisionShare * 100)}%`}>
             <input type="range" className="range" min={0} max={0.7} step={0.05} value={s.revisionShare} onChange={(e) => set('revisionShare', +e.target.value)} />
           </Field>
+          <div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm font-medium text-slate-200">Usual video speed</span>
+              <span className="font-display text-sm text-violet-300">{s.playbackSpeed || 1}×</span>
+            </div>
+            <div className="mt-2.5"><SpeedPicker value={s.playbackSpeed || 1} onChange={(v) => set('playbackSpeed', v)} id="settings-speed" /></div>
+            <p className="mt-1.5 text-[11px] text-slate-500">Preselected at each morning check-in; you can change it there for the day.</p>
+          </div>
           <Field label="Video time multiplier (pauses & notes)" hint={`× ${s.durationMultiplier}`}>
             <input type="range" className="range" min={1} max={2.5} step={0.05} value={s.durationMultiplier} onChange={(e) => set('durationMultiplier', +e.target.value)} />
           </Field>
@@ -146,6 +155,7 @@ export default function Settings() {
               ))}
             </div>
           </Card>
+          <ShareCard />
           <Card className="p-5 sm:p-6">
             <div className="label mb-4">Your data</div>
             <p className="mb-4 text-sm text-slate-400">

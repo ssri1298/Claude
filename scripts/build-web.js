@@ -10,7 +10,9 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist-web');
 const site = join(dist, 'site');
-execSync('npx vite build --mode web', { cwd: root, stdio: 'inherit' });
+// The link friends open (shown in Settings → Share Scalpel with friends).
+const SHARE_URL = process.env.SHARE_URL || 'https://claude.ai/artifact/TYP4Rcfi6SJuvujFG7kSaV';
+execSync('npx vite build --mode web', { cwd: root, stdio: 'inherit', env: { ...process.env, VITE_SHARE_URL: SHARE_URL } });
 
 const html = readFileSync(join(dist, 'index.html'), 'utf8');
 const assets = join(dist, 'assets');

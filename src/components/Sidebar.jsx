@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { LayoutDashboard, CalendarCheck, Sparkles, ImageUp, Library, BrainCircuit, CalendarDays, Settings, Scissors } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, Sparkles, ImageUp, Library, BrainCircuit, CalendarDays, Settings } from 'lucide-react';
+import ScalpelMark from './ScalpelMark.jsx';
 import { useApp } from '../store.jsx';
 import SaveStatus from './SaveStatus.jsx';
 
@@ -17,8 +18,8 @@ export const NAV = [
 export function Logo() {
   return (
     <div className="flex items-center gap-3">
-      <div className="relative grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-violet-600 to-cyan-500 shadow-glow">
-        <Scissors size={18} className="-rotate-45 text-white" />
+      <div className="ring-gradient relative grid h-10 w-10 place-items-center rounded-xl bg-ink-850 shadow-glow">
+        <ScalpelMark size={34} />
       </div>
       <div>
         <div className="font-display text-lg font-semibold leading-none tracking-tight text-white">Scalpel</div>
