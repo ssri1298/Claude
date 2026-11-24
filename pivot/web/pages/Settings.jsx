@@ -130,7 +130,7 @@ export default function Settings({ query }) {
         ))}
       </Group>
 
-      <HolidaysGroup s={s} save={save} />
+      <HolidaysGroup s={s} save={save} names={data.holidayNames} sync={data.holidaySync} reload={reload} />
 
       <Group title="Appearance">
         <Row icon={Palette} iconTone="rose" title="Theme" right={<ThemePicker />} />
@@ -493,11 +493,74 @@ function UploadNifty500() {
   );
 }
 
-function HolidaysGroup({ s, save }) {
+function HolidaysGroup({ s, save, names = {}, sync, reload }) {
   const [d, setD] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [showPast, setShowPast] = useState(false);
+  const today = new Date().toISOString().slice(0, 10);
+  const upcoming = s.holidays.filter((h) => h >= today);
+  const past = s.holidays.filter((h) => h < today);
+  const fmt = (h) => new Date(h + 'T12:00:00Z').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const update = async () => {
+    setBusy(true);
+    setMsg('');
+    try {
+      const r = await api('/holidays/sync', { method: 'POST' });
+      setMsg(`✓ Downloaded ${r.count} NSE holidays${r.added ? ` · ${r.added} new` : ' · already up to date'}`);
+      reload();
+    } catch (e) {
+      setMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const Item = ({ h }) => (
+    <div className="flex items-center justify-between gap-3 px-5 py-2.5">
+      <div className="min-w-0">
+        <div className="font-semibold num">{fmt(h)}</div>
+        <div className="text-ink2 text-[14px] truncate">{names[h] || 'Added by you'}</div>
+      </div>
+      <button onClick={() => save({ holidays: s.holidays.filter((x) => x !== h) })} className="text-ink3 text-[14px] font-semibold shrink-0 px-2" aria-label={`Remove ${h}`}>
+        Remove
+      </button>
+    </div>
+  );
   return (
-    <Group title="Market holidays" footer="Weekends are skipped automatically. Add NSE trading holidays so the agents rest on those days.">
-      <Row icon={CalendarOff} iconTone="butter" title="Add a holiday">
+    <Group
+      title="Market holidays (NSE)"
+      footer={`The agents rest on weekends and these days. ${sync ? `Last updated ${new Date(sync.at).toLocaleDateString('en-IN')} from ${sync.source}.` : ''} Pivot checks NSE weekly, so next year's list appears as soon as NSE publishes it (usually late December).`}
+    >
+      <Row
+        icon={CalendarOff}
+        iconTone="butter"
+        title={`${upcoming.length} upcoming`}
+        subtitle={upcoming[0] ? `Next: ${new Date(upcoming[0] + 'T12:00:00Z').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' })}` : 'None saved yet'}
+        right={
+          <Button size="sm" tone="soft" loading={busy} onClick={update}>
+            Update
+          </Button>
+        }
+      />
+      {msg && <div className="px-5 py-2 font-semibold text-[15px]">{msg}</div>}
+      <div className="divide-y hairline">
+        {upcoming.map((h) => (
+          <Item key={h} h={h} />
+        ))}
+      </div>
+      {past.length > 0 && (
+        <button onClick={() => setShowPast(!showPast)} className="w-full text-left px-5 py-3 text-accent font-semibold text-[15px]">
+          {showPast ? 'Hide' : 'Show'} {past.length} past holidays
+        </button>
+      )}
+      {showPast && (
+        <div className="divide-y hairline opacity-70">
+          {past.map((h) => (
+            <Item key={h} h={h} />
+          ))}
+        </div>
+      )}
+      <Row title="Add a holiday yourself">
         <div className="flex gap-2 mt-2">
           <input type="date" value={d} onChange={(e) => setD(e.target.value)} className="bg-card2 rounded-xl px-3 py-2 text-[16px]" />
           <Button size="sm" disabled={!d} onClick={() => (save({ holidays: [...new Set([...s.holidays, d])].sort() }), setD(''))}>
@@ -505,15 +568,6 @@ function HolidaysGroup({ s, save }) {
           </Button>
         </div>
       </Row>
-      {s.holidays.length > 0 && (
-        <div className="px-5 py-3 flex flex-wrap gap-2">
-          {s.holidays.map((h) => (
-            <button key={h} onClick={() => save({ holidays: s.holidays.filter((x) => x !== h) })} className="bg-card2 rounded-full px-3 py-1.5 text-[14px] font-semibold num">
-              {h} ✕
-            </button>
-          ))}
-        </div>
-      )}
     </Group>
   );
 }

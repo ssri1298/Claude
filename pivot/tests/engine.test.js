@@ -214,3 +214,15 @@ test('confirmation checks: VWAP, range position, gap rule, candle hold', () => {
   assert.equal(evaluateChecks({ ...base, dayOpen: 100.5, minutes: 20 }).checks.gap, false);
   assert.equal(evaluateChecks(base, { ...DEFAULT_CONFIRM, vwap: false }).checks.vwap, null);
 });
+
+test('NSE holiday list: bundled 2026 dates are weekdays and NSE dates parse', async () => {
+  const { BUNDLED_HOLIDAYS, parseNseDate } = await import('../server/core/holidays.js');
+  assert.equal(BUNDLED_HOLIDAYS[2026].length, 15);
+  for (const [d] of BUNDLED_HOLIDAYS[2026]) {
+    const wd = new Date(d + 'T12:00:00Z').getUTCDay();
+    assert.ok(wd >= 1 && wd <= 5, `${d} is a weekday`);
+  }
+  assert.equal(parseNseDate('26-Jan-2026'), '2026-01-26');
+  assert.equal(parseNseDate('3-Mar-2026'), '2026-03-03');
+  assert.equal(parseNseDate('bad'), null);
+});

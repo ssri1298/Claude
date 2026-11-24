@@ -13,6 +13,7 @@ import { Parent } from './agents/parent.js';
 import { startQuotePusher } from './core/quotes.js';
 import { WebPush, toPlain } from './notify/webpush.js';
 import { IntradayTracker } from './core/intraday.js';
+import { syncHolidays } from './core/holidays.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -172,12 +173,16 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
     ctx.stopped = true;
     clearInterval(ctx.interval);
     clearInterval(ctx.quoteTimer);
+    clearInterval(ctx.holidayTimer);
     ctx.telegram?.stop();
     ctx.feed?.stop?.();
   };
 
   if (autostart) {
     ctx.quoteTimer = startQuotePusher(ctx);
+    // NSE trading holidays: built-in list now, official NSE list in the background (then weekly)
+    syncHolidays(ctx).catch(() => {});
+    ctx.holidayTimer = setInterval(() => syncHolidays(ctx).catch(() => {}), 24 * 3600 * 1000);
     if (demo) startDemoDriver(ctx);
     else {
       await restoreKiteSession();

@@ -10,6 +10,7 @@ import { round } from './engine/vcp.js';
 import { NIFTY50_TOKEN, parseNifty500Csv } from './broker/feeds.js';
 import { indexSnapshot, stockSnapshot } from './core/quotes.js';
 import { CHECK_LABELS } from './engine/confirm.js';
+import { syncHolidays } from './core/holidays.js';
 
 const wrap = (fn) => async (req, res) => {
   try {
@@ -318,6 +319,8 @@ export function mountApi(app, ctx, auth, { dbFile }) {
       kite: { connected: !!ctx.kiteSession.connected, userName: ctx.kiteSession.userName },
       universeCount: db.get('SELECT COUNT(*) AS n FROM universe WHERE active = 1').n,
       historyFrom: db.get('SELECT MIN(date) AS d FROM candles').d,
+      holidayNames: db.kvGet('holidayNames', {}),
+      holidaySync: db.kvGet('holidaySync'),
       demo: ctx.demo,
     })),
   );
@@ -370,6 +373,14 @@ export function mountApi(app, ctx, auth, { dbFile }) {
       ctx.secrets = saveSecrets(db, { telegramChatId: '' });
       ctx.reconfigureTelegram();
       return { ok: true };
+    }),
+  );
+  app.post(
+    '/api/holidays/sync',
+    wrap(async () => {
+      const r = await syncHolidays(ctx, { force: true });
+      if (!r.ok) throw Object.assign(new Error(`NSE could not be reached (${r.error}). The saved list is still in use.`), { status: 502 });
+      return r;
     }),
   );
   app.put(
