@@ -226,3 +226,14 @@ test('NSE holiday list: bundled 2026 dates are weekdays and NSE dates parse', as
   assert.equal(parseNseDate('3-Mar-2026'), '2026-03-03');
   assert.equal(parseNseDate('bad'), null);
 });
+
+test('backtest time exit uses the chosen number of days', () => {
+  const m = generateMarket({ seed: 7, stocks: 120, days: 700 });
+  for (const days of [2, 5]) {
+    const r = runBacktest({ stocks: m.stocks, index: m.index, from: m.dates[260], rules: { confirm: { enabled: false }, twoStage: { enabled: false }, failedExit: { enabled: false }, timeExit: { enabled: true, days } } });
+    const te = r.trades.filter((t) => t.exitReason === 'time');
+    assert.ok(te.length > 0, `some trades left by the time exit (${days} days)`);
+    for (const t of te) assert.equal(t.holdDays, days);
+    assert.equal(r.params.rules.timeExit.days, days);
+  }
+});

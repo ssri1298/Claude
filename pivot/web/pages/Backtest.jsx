@@ -14,7 +14,7 @@ export default function Backtest() {
   useEffect(() => {
     if (settings.data && !p) {
       const r = settings.data.settings.rules;
-      setP({ from: '', to: '', capital: settings.data.settings.paperCapital, minScore: r.minScore, positionPct: r.positionPct, maxStopPct: r.maxStopPct, trailMethod: r.trailMethod, marketFilter: settings.data.settings.marketFilter, reentry: r.reentry.enabled, confirm: r.confirm.enabled, twoStage: r.twoStage.enabled, failedExit: r.failedExit.enabled, timeExit: !!r.timeExit?.enabled, precision: '15m' });
+      setP({ from: '', to: '', capital: settings.data.settings.paperCapital, minScore: r.minScore, positionPct: r.positionPct, maxStopPct: r.maxStopPct, trailMethod: r.trailMethod, marketFilter: settings.data.settings.marketFilter, reentry: r.reentry.enabled, confirm: r.confirm.enabled, twoStage: r.twoStage.enabled, failedExit: r.failedExit.enabled, timeExit: !!r.timeExit?.enabled, timeExitDays: r.timeExit?.days || 7, precision: '15m' });
     }
   }, [settings.data]);
 
@@ -43,7 +43,7 @@ export default function Backtest() {
           to: p.to || null,
           capital: p.capital,
           marketFilter: p.marketFilter,
-          rules: { minScore: p.minScore, positionPct: p.positionPct, maxStopPct: p.maxStopPct, trailMethod: p.trailMethod, reentry: { ...settings.data.settings.rules.reentry, enabled: p.reentry }, confirm: { ...settings.data.settings.rules.confirm, enabled: p.confirm }, twoStage: { ...settings.data.settings.rules.twoStage, enabled: p.twoStage }, failedExit: { ...settings.data.settings.rules.failedExit, enabled: p.failedExit }, timeExit: { ...(settings.data.settings.rules.timeExit || { days: 7 }), enabled: p.timeExit } },
+          rules: { minScore: p.minScore, positionPct: p.positionPct, maxStopPct: p.maxStopPct, trailMethod: p.trailMethod, reentry: { ...settings.data.settings.rules.reentry, enabled: p.reentry }, confirm: { ...settings.data.settings.rules.confirm, enabled: p.confirm }, twoStage: { ...settings.data.settings.rules.twoStage, enabled: p.twoStage }, failedExit: { ...settings.data.settings.rules.failedExit, enabled: p.failedExit }, timeExit: { enabled: p.timeExit, days: Math.max(1, Math.min(60, Math.round(p.timeExitDays || 7))) } },
         },
       });
       setJob({ id: r.id, status: 'running', progress: 0 });
@@ -132,7 +132,8 @@ export default function Backtest() {
           <Row title="Breakout confirmation" subtitle={p.precision === '15m' ? '15-min close above the pivot, VWAP, range position, gap rule' : 'Daily data: strong close above the pivot, bought at the close'} right={<Segmented size="sm" value={p.confirm ? 'on' : 'off'} onChange={(v) => set('confirm')(v === 'on')} options={['on', 'off']} />} />
           <Row title="Two-stage buy" subtitle={p.precision === '15m' ? 'Half at the breakout, rest at 15:15 if it holds' : 'Half at the breakout, rest at the close if it holds'} right={<Segmented size="sm" value={p.twoStage ? 'on' : 'off'} onChange={(v) => set('twoStage')(v === 'on')} options={['on', 'off']} />} />
           <Row title="Sell failed breakouts" subtitle="Close back below the pivot" right={<Segmented size="sm" value={p.failedExit ? 'on' : 'off'} onChange={(v) => set('failedExit')(v === 'on')} options={['on', 'off']} />} />
-          <Row title="Time exit" subtitle={`No stop and no +10% after ${settings.data?.settings.rules.timeExit?.days || 7} trading days → sell`} right={<Segmented size="sm" value={p.timeExit ? 'on' : 'off'} onChange={(v) => set('timeExit')(v === 'on')} options={['on', 'off']} />} />
+          <Row title="Time exit" subtitle={p.timeExit ? `No stop and no +10% after ${p.timeExitDays} trading days → sell at the close` : 'Off — trades are held until the stop or the +10% target'} right={<Segmented size="sm" value={p.timeExit ? 'on' : 'off'} onChange={(v) => set('timeExit')(v === 'on')} options={['on', 'off']} />} />
+          {p.timeExit && <Row title="Exit after" subtitle="Trading days without the stop or +10%" right={<NumberField value={p.timeExitDays} onChange={(v) => set('timeExitDays')(Math.max(1, Math.min(60, Math.round(v))))} suffix="days" min={1} max={60} width="w-20" />} />}
           <div className="p-4 flex flex-wrap gap-3">
             <Button icon={Play} onClick={run} loading={job?.status === 'running'} size="lg">
               Run backtest
@@ -174,6 +175,7 @@ function Results({ r }) {
         </h2>
         <Pill tone={r.params.resolution === '15minute' ? 'sky' : 'gray'}>{r.params.resolution === '15minute' ? '15-minute candles' : 'Daily candles'}</Pill>
         <Pill tone="lav">{s.total} breakouts</Pill>
+        {r.params.rules?.timeExit?.enabled && <Pill tone="peach">Time exit after {r.params.rules.timeExit.days} days</Pill>}
         <Pill tone="mint">{s.taken} taken</Pill>
         {s.skippedConfirm > 0 && <Pill tone="gray">{s.skippedConfirm} not confirmed</Pill>}
         {s.notConfirmed > 0 && r.params.rules?.confirm?.enabled && <Pill tone="gray">{s.notConfirmed} crossed but never confirmed</Pill>}
