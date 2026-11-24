@@ -256,3 +256,38 @@ test('time exit: no stop and no +10% within 7 trading days → sold at the close
   assert.equal(pos.status, 'closed');
   assert.equal(pos.exit_reason, 'time');
 });
+
+test('morning Kite login reminder: at the chosen time, repeated, not on holidays, can be switched off', async () => {
+  const { SimClock } = await import('../server/core/time.js');
+  const ctx = await createRuntime({ dbFile: ':memory:', demo: false, autostart: false });
+  ctx.telegram?.stop();
+  ctx.clock = new SimClock(istDate('2028-03-15', toMinutes('07:59')));
+  ctx.bus.clock = ctx.clock;
+  const sent = [];
+  ctx.notify = async (type, text) => sent.push([type, text]);
+  const at = async (hhmm) => {
+    ctx.clock.set(istDate('2028-03-15', toMinutes(hhmm)));
+    await ctx.parent.tick();
+  };
+  await at('07:59');
+  assert.equal(sent.length, 0);
+  await at('08:00');
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0][0], 'login');
+  await at('08:30');
+  assert.equal(sent.length, 1, 'no spam in between');
+  await at('08:45');
+  await at('09:10');
+  assert.equal(sent.length, 3, 'reminded again at 08:45 and 09:10');
+  // a market holiday: nothing
+  ctx.updateSettings({ holidays: ['2028-03-16'] });
+  ctx.clock.set(istDate('2028-03-16', toMinutes('08:00')));
+  await ctx.parent.tick();
+  assert.equal(sent.length, 3);
+  // custom time
+  ctx.updateSettings({ schedule: { login: '07:30' } });
+  ctx.clock.set(istDate('2028-03-17', toMinutes('07:30')));
+  await ctx.parent.tick();
+  assert.equal(sent.length, 4);
+  ctx.stop();
+});

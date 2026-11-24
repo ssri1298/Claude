@@ -67,6 +67,7 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
     if (!ctx.secrets.kiteUserId) ctx.secrets = saveSecrets(db, { kiteUserId: s.user_id });
     db.kvSet('kiteSession', { accessToken: s.access_token, date: ist().date, userName: s.user_name, userId: s.user_id, at: Date.now() });
     await onKiteConnected(s.user_name);
+    ctx.notify('login', `✅ <b>Zerodha connected</b> as ${s.user_name}\nThe agents are ready for today's market.`);
     return s;
   };
 
@@ -142,7 +143,7 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
 
   /** Send to every channel you've set up: Pivot app notifications and/or Telegram. */
   ctx.notify = async (type, text, buttons) => {
-    if (type !== 'login' && ctx.settings.notify?.[type] === false) return null;
+    if (ctx.settings.notify?.[type] === false) return null;
     const flat = (buttons || []).flat();
     const approvalId = Number(flat.find((b) => b.callback_data?.startsWith('approve:'))?.callback_data.split(':')[1]) || null;
     const link = flat.find((b) => b.url)?.url;

@@ -10,7 +10,7 @@
 import { Screener } from './screener.js';
 import { Analyst } from './analyst.js';
 import { Executor } from './executor.js';
-import { ist, toMinutes, MARKET, isTradingDay } from '../core/time.js';
+import { ist, toMinutes, MARKET, isTradingDay, hhmm } from '../core/time.js';
 import { round } from '../engine/vcp.js';
 import { esc } from '../notify/telegram.js';
 
@@ -85,8 +85,10 @@ export class Parent {
       day.jobs.login = true;
       if (!this.dataReady()) this.remindLogin();
     }
-    // Re-remind at 08:45 and 09:05 if still not logged in
-    for (const r of ['08:45', '09:05']) {
+    // Re-remind 45 minutes later and just before the open (09:10) if still not logged in
+    const loginAt = toMinutes(sched.login);
+    const again = [...new Set([Math.min(loginAt + 45, toMinutes('09:10')), toMinutes('09:10')])].filter((m) => m > loginAt).map(hhmm);
+    for (const r of again) {
       if (at(r) && !day.jobs['login' + r] && t.minutes < toMinutes('09:30')) {
         day.jobs['login' + r] = true;
         if (!this.dataReady()) this.remindLogin();
@@ -175,7 +177,7 @@ export class Parent {
     this.log('Waiting for your daily Kite login (required by Zerodha every morning)', 'warn');
     this.ctx.notify?.(
       'login',
-      '🔑 <b>Good morning!</b> Please log in to Zerodha so Pivot can trade today.\nZerodha requires this once every day.',
+      '🔑 <b>Good morning! Log in to Zerodha</b>\nTap here, sign in to Kite as usual, and the agents will trade today. Zerodha requires this once every day.',
       url ? [[{ text: 'Log in to Kite', url }]] : undefined,
     );
   }

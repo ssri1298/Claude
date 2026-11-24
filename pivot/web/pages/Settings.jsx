@@ -121,6 +121,7 @@ export default function Settings({ query }) {
 
       <Group title="What to notify me about">
         {[
+          ['login', 'Morning Kite login reminder'],
           ['proposals', 'Trade approvals'],
           ['fills', 'Buys filled'],
           ['exits', 'Stops, partial profits & exits'],
@@ -130,6 +131,24 @@ export default function Settings({ query }) {
         ].map(([k, l]) => (
           <Row key={k} icon={k === 'proposals' ? Bell : undefined} iconTone="peach" title={l} right={<Toggle checked={s.notify[k] !== false} onChange={(v) => save({ notify: { [k]: v } })} />} />
         ))}
+      </Group>
+
+      <Group title="Morning login reminder" footer="Zerodha needs one login every trading day. Pivot reminds you at this time, again 45 minutes later and at 09:10 if you haven't logged in, and confirms when Zerodha is connected. No reminders on weekends and market holidays.">
+        <Row
+          icon={KeyRound}
+          iconTone="butter"
+          title="Remind me at"
+          right={
+            <input
+              type="time"
+              value={s.schedule.login}
+              min="06:00"
+              max="09:00"
+              onChange={(e) => e.target.value && e.target.value <= '09:00' && save({ schedule: { login: e.target.value } })}
+              className="bg-card2 rounded-xl px-3 py-2 text-[17px] num font-semibold"
+            />
+          }
+        />
       </Group>
 
       <HolidaysGroup s={s} save={save} names={data.holidayNames} sync={data.holidaySync} reload={reload} />

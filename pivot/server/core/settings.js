@@ -16,7 +16,7 @@ export const DEFAULT_SETTINGS = {
   rules: DEFAULT_RULES,
   holidays: [],
   schedule: { login: '08:00', prep: '08:30', closeCheck: '15:20', post: '15:40' },
-  notify: { proposals: true, fills: true, exits: true, morningBrief: true, eveningReport: true, nearPivot: false },
+  notify: { login: true, proposals: true, fills: true, exits: true, morningBrief: true, eveningReport: true, nearPivot: false },
   theme: 'system',
 };
 

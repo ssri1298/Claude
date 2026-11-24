@@ -16,7 +16,7 @@ self.addEventListener('push', (event) => {
     badge: '/icon-192.png',
     tag: d.tag || undefined,
     renotify: !!d.tag,
-    requireInteraction: !!d.approvalId,
+    requireInteraction: !!d.approvalId || d.tag === 'login',
     data: { url: d.url || '/', approvalId: d.approvalId || null },
   };
   // Action buttons show on Android/desktop; on iPhone a tap opens the approval screen instead.
