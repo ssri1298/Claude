@@ -14,7 +14,7 @@ export default function Backtest() {
   useEffect(() => {
     if (settings.data && !p) {
       const r = settings.data.settings.rules;
-      setP({ from: '', to: '', capital: settings.data.settings.paperCapital, minScore: r.minScore, positionPct: r.positionPct, maxStopPct: r.maxStopPct, trailMethod: r.trailMethod, marketFilter: settings.data.settings.marketFilter, reentry: r.reentry.enabled, precision: '15m' });
+      setP({ from: '', to: '', capital: settings.data.settings.paperCapital, minScore: r.minScore, positionPct: r.positionPct, maxStopPct: r.maxStopPct, trailMethod: r.trailMethod, marketFilter: settings.data.settings.marketFilter, reentry: r.reentry.enabled, confirm: r.confirm.enabled, twoStage: r.twoStage.enabled, failedExit: r.failedExit.enabled, precision: '15m' });
     }
   }, [settings.data]);
 
@@ -43,7 +43,7 @@ export default function Backtest() {
           to: p.to || null,
           capital: p.capital,
           marketFilter: p.marketFilter,
-          rules: { minScore: p.minScore, positionPct: p.positionPct, maxStopPct: p.maxStopPct, trailMethod: p.trailMethod, reentry: { ...settings.data.settings.rules.reentry, enabled: p.reentry } },
+          rules: { minScore: p.minScore, positionPct: p.positionPct, maxStopPct: p.maxStopPct, trailMethod: p.trailMethod, reentry: { ...settings.data.settings.rules.reentry, enabled: p.reentry }, confirm: { ...settings.data.settings.rules.confirm, enabled: p.confirm }, twoStage: { ...settings.data.settings.rules.twoStage, enabled: p.twoStage }, failedExit: { ...settings.data.settings.rules.failedExit, enabled: p.failedExit } },
         },
       });
       setJob({ id: r.id, status: 'running', progress: 0 });
@@ -129,6 +129,9 @@ export default function Backtest() {
             />
           </Row>
           <Row title="Re-entry after stop-out" right={<Segmented size="sm" value={p.reentry ? 'on' : 'off'} onChange={(v) => set('reentry')(v === 'on')} options={['on', 'off']} />} />
+          <Row title="Breakout confirmation" subtitle={p.precision === '15m' ? '15-min close above the pivot, VWAP, range position, gap rule' : 'Daily data: strong close above the pivot, bought at the close'} right={<Segmented size="sm" value={p.confirm ? 'on' : 'off'} onChange={(v) => set('confirm')(v === 'on')} options={['on', 'off']} />} />
+          <Row title="Two-stage buy" subtitle={p.precision === '15m' ? 'Half at the breakout, rest at 15:15 if it holds' : 'Half at the breakout, rest at the close if it holds'} right={<Segmented size="sm" value={p.twoStage ? 'on' : 'off'} onChange={(v) => set('twoStage')(v === 'on')} options={['on', 'off']} />} />
+          <Row title="Sell failed breakouts" subtitle="Close back below the pivot" right={<Segmented size="sm" value={p.failedExit ? 'on' : 'off'} onChange={(v) => set('failedExit')(v === 'on')} options={['on', 'off']} />} />
           <div className="p-4 flex flex-wrap gap-3">
             <Button icon={Play} onClick={run} loading={job?.status === 'running'} size="lg">
               Run backtest
@@ -171,6 +174,8 @@ function Results({ r }) {
         <Pill tone={r.params.resolution === '15minute' ? 'sky' : 'gray'}>{r.params.resolution === '15minute' ? '15-minute candles' : 'Daily candles'}</Pill>
         <Pill tone="lav">{s.total} breakouts</Pill>
         <Pill tone="mint">{s.taken} taken</Pill>
+        {s.skippedConfirm > 0 && <Pill tone="gray">{s.skippedConfirm} not confirmed</Pill>}
+        {s.notConfirmed > 0 && r.params.rules?.confirm?.enabled && <Pill tone="gray">{s.notConfirmed} crossed but never confirmed</Pill>}
         <Pill tone="gray">{s.skippedScore} low score</Pill>
         <Pill tone="gray">{s.skippedStop} stop too wide</Pill>
         <Pill tone="gray">{s.skippedRegime} market filter</Pill>
@@ -188,7 +193,7 @@ function Results({ r }) {
                   {t.symbol} {t.reentry && <span className="text-sky text-[13px]">re-entry</span>}
                 </div>
                 <div className="text-ink2 text-[14px] num">
-                  {niceDate(t.entryDate)} {t.entryTime || ''} {price(t.entryPrice)} → {niceDate(t.exitDate)} {t.exitTime || ''} · {t.days}d · {{ stop: 'stop-loss', trail: 'trailing exit', partial: 'partial' }[t.reason] || t.reason} · {t.r}R
+                  {niceDate(t.entryDate)} {t.entryTime || ''} {price(t.entryPrice)} → {niceDate(t.exitDate)} {t.exitTime || ''} · {t.days}d · {{ stop: 'stop-loss', trail: 'trailing exit', partial: 'partial', failed: 'failed breakout' }[t.reason] || t.reason} · {t.r}R
                 </div>
               </div>
               <div className="text-right">

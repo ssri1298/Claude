@@ -15,7 +15,14 @@ import { round } from './vcp.js';
 import { roundTick } from './indicators.js';
 
 export function runBacktest({ stocks, index, from, to, capital = 500000, rules = DEFAULT_RULES, marketFilter = 'pause', onProgress }) {
-  const R = { ...DEFAULT_RULES, ...rules, reentry: { ...DEFAULT_RULES.reentry, ...(rules?.reentry || {}) } };
+  const R = {
+    ...DEFAULT_RULES,
+    ...rules,
+    reentry: { ...DEFAULT_RULES.reentry, ...(rules?.reentry || {}) },
+    confirm: { ...DEFAULT_RULES.confirm, ...(rules?.confirm || {}) },
+    twoStage: { ...DEFAULT_RULES.twoStage, ...(rules?.twoStage || {}) },
+    failedExit: { ...DEFAULT_RULES.failedExit, ...(rules?.failedExit || {}) },
+  };
   const prepared = prepareUniverse(stocks);
   const bySym = new Map(prepared.map((s) => [s.symbol, s]));
   const dates = index.map((c) => c.date).filter((d) => (!from || d >= from) && (!to || d <= to));
@@ -24,7 +31,10 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
   const closed = [];
   const equity = [];
   const stoppedOut = new Map(); // symbol → { date, pivot, count, idx }
-  const signals = { total: 0, taken: 0, skippedCapital: 0, skippedRegime: 0, skippedScore: 0, skippedStop: 0 };
+  const signals = { total: 0, taken: 0, skippedCapital: 0, skippedRegime: 0, skippedScore: 0, skippedStop: 0, skippedConfirm: 0 };
+  const CF = { ...(R.confirm || {}) };
+  const TS = R.twoStage || {};
+  const FX = R.failedExit || {};
   let prevAnalysis = null;
 
   const sell = (pos, qty, price, date, reason) => {
@@ -99,6 +109,10 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
           else if (a.type === 'raiseStop') pos.stop = a.newStop;
         }
       }
+      // Failed breakout: closed back below the pivot within the first days → sell at the close
+      if (FX.enabled && pos.qtyOpen > 0 && !pos.partialDone && c < pos.pivot && di - dates.indexOf(pos.entryDate) < (FX.days || 2)) {
+        sell(pos, pos.qtyOpen, c * (1 - R.slippagePct / 100), d, 'failed');
+      }
     }
 
     // ---------- 2. new entries using yesterday's analysis
@@ -128,7 +142,18 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
         const pace = a.avgVol50 ? vol / a.avgVol50 : 0;
         if (pace < R.minVolPace) continue;
         signals.total++;
-        const entry = roundTick(Math.max(o, pivot * 1.001) * (1 + R.slippagePct / 100));
+        // Daily-candle stand-in for the live confirmation checks: a strong close above the pivot
+        // (cleared by the buffer, in the top third of the day's range, still in the buy zone).
+        const cl = s.c.close[i],
+          lo = s.c.low[i];
+        const thr = pivot * (1 + (CF.pivotBufferPct || 0) / 100);
+        const closeOk = cl >= thr && cl <= pivot * (1 + R.buyZonePct / 100) && (!CF.rangePos || h - lo <= 0 || cl >= lo + (CF.rangeTopFrac || 0.67) * (h - lo));
+        if (CF.enabled && !closeOk) {
+          signals.skippedConfirm++;
+          continue;
+        }
+        const atClose = !!CF.enabled; // confirmed entries happen at the close in a daily backtest
+        const entry = roundTick((atClose ? cl : Math.max(o, pivot * 1.001)) * (1 + R.slippagePct / 100));
         const sc = scoreSetup(isRe && !a.vcp?.valid ? { ...a, vcp: { ...a.vcp, valid: true, pivot } } : a, { price: entry, volPace: pace });
         let minScore = R.minScore;
         if (regime === 'pressure') minScore += R.pressureExtraScore;
@@ -145,7 +170,7 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
           signals.skippedStop++;
           continue;
         }
-        candidates.push({ a, s, i, entry, stop: st.stop, score: sc.score, grade: sc.grade, pivot, isRe, half: regime === 'downtrend' && marketFilter === 'half' });
+        candidates.push({ a, s, i, entry, stop: st.stop, score: sc.score, grade: sc.grade, pivot, isRe, half: regime === 'downtrend' && marketFilter === 'half', atClose, closeOk, close: cl });
       }
       candidates.sort((x, y) => y.score - x.score);
       for (const cnd of candidates) {
@@ -156,6 +181,8 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
           signals.skippedCapital++;
           continue;
         }
+        const planned = size.qty;
+        if (TS.enabled && !cnd.atClose && planned >= 2) size.qty = Math.max(1, Math.floor(planned * (TS.firstFraction || 0.5)));
         const ch = deliveryCharges('BUY', size.qty, cnd.entry);
         cash -= size.qty * cnd.entry + ch;
         signals.taken++;
@@ -184,9 +211,29 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
         // any low under the stop came after our entry. Otherwise the low most likely came
         // before price rallied through the pivot.
         const sc = cnd.s.c;
+        if (cnd.atClose) continue; // bought at the close — nothing else happens today
         const gapEntry = sc.open[cnd.i] >= cnd.pivot;
-        if (sc.close[cnd.i] <= pos.stop || (gapEntry && sc.low[cnd.i] <= pos.stop))
+        if (sc.close[cnd.i] <= pos.stop || (gapEntry && sc.low[cnd.i] <= pos.stop)) {
           sell(pos, pos.qtyOpen, pos.stop * (1 - R.slippagePct / 100), d, 'stop'); // the live stop fires at the stop level
+          continue;
+        }
+        // Two-stage: add the rest at the close if the breakout held
+        const addQty = planned - pos.qtyInitial;
+        if (addQty > 0 && cnd.closeOk) {
+          const px = roundTick(cnd.close * (1 + R.slippagePct / 100));
+          const q2 = Math.min(addQty, Math.floor((cash * 0.995) / px));
+          if (q2 > 0) {
+            const ch2 = deliveryCharges('BUY', q2, px);
+            cash -= q2 * px + ch2;
+            pos.entryPrice = round((pos.entryPrice * pos.qtyInitial + px * q2) / (pos.qtyInitial + q2));
+            pos.qtyInitial += q2;
+            pos.qtyOpen += q2;
+            pos.charges += ch2;
+            pos.realized -= ch2;
+            pos.fills.push({ date: d, side: 'BUY', qty: q2, price: px, reason: 'second part' });
+          }
+        }
+        if (FX.enabled && sc.close[cnd.i] < cnd.pivot) sell(pos, pos.qtyOpen, sc.close[cnd.i] * (1 - R.slippagePct / 100), d, 'failed');
       }
     }
 

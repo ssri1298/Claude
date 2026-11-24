@@ -9,6 +9,7 @@ import { volumePace } from '../engine/market.js';
 import { ist, addDays, MARKET, prevTradingDay, tradingDaysBetween } from '../core/time.js';
 import { round } from '../engine/vcp.js';
 import { NIFTY50_TOKEN } from '../broker/feeds.js';
+import { evaluateChecks, describeChecks } from '../engine/confirm.js';
 
 const NAME = 'Screener';
 const HISTORY_BARS = 420;
@@ -238,6 +239,57 @@ export class Screener {
     }
   }
 
+  /**
+   * Breakout confirmation. The first tick above the pivot only "arms" the stock and opens a probe
+   * (a tracking-only position that measures how first-tick buying would have done). A signal is
+   * sent once the confirmation checks pass: 15-min candle close above the pivot, above VWAP,
+   * top third of the day's range, gap-up rule, 0.3% clearance and volume pace.
+   */
+  confirmBreakout(a, q, ltp, pivot, pace, minutes) {
+    const { settings, day, intraday } = this.ctx;
+    const rules = settings.rules;
+    const c = { ...rules.confirm };
+    const tr = intraday?.get(a.token);
+    if (!day.armed.has(a.symbol)) {
+      const bucket = intraday ? intraday.bucketOf(minutes) : 0;
+      day.armed.set(a.symbol, { minute: minutes, bucket, price: ltp });
+      this.ctx.agents?.executor?.openProbe(a, ltp, pivot, a.vcp.stop);
+      if (c.enabled && !this.falseAlarmSeen?.has(`${a.symbol}@${pivot}`)) this.log(`${a.symbol} crossed its pivot ₹${pivot} at ₹${ltp} — waiting for confirmation`);
+    }
+    const arm = day.armed.get(a.symbol);
+    const { checks, confirmed } = c.enabled
+      ? evaluateChecks(
+          {
+            ltp,
+            pivot,
+            dayOpen: q.open,
+            dayHigh: q.high,
+            dayLow: q.low,
+            vwap: tr?.vwap,
+            orHigh: tr?.orHigh,
+            lastBar: intraday?.lastClosedBar(a.token),
+            armedBucket: arm.bucket,
+            minutes,
+            volPace: pace,
+          },
+          c,
+          rules.minVolPace,
+        )
+      : { checks: { volume: pace != null && pace >= rules.minVolPace }, confirmed: pace != null && pace >= rules.minVolPace };
+    this.ctx.agents?.executor?.recordProbeChecks(a.symbol, checks, confirmed);
+    if (!confirmed) {
+      if (checks.volume === false && !day.lowVolLogged.has(a.symbol)) {
+        day.lowVolLogged.add(a.symbol);
+        this.log(`${a.symbol} is above its pivot ₹${pivot} but volume pace is only ${round(pace ?? 0, 1)}× — waiting for volume`);
+      }
+      return null;
+    }
+    day.signaled.add(a.symbol);
+    day.armed.delete(a.symbol);
+    this.log(`🚀 ${a.symbol} breakout confirmed above ₹${pivot} at ₹${ltp} on ${round(pace, 1)}× volume${c.enabled ? ' — ' + describeChecks(checks).join(' · ') : ''}`, 'success');
+    return { type: 'breakout', symbol: a.symbol, a, price: ltp, pivot, chartStop: a.vcp.stop, volPace: pace, checks };
+  }
+
   /** Minute scan across the whole universe. Returns breakout / re-entry signals. */
   scanMinute() {
     const { quotes, analysis, settings, clock, db } = this.ctx;
@@ -280,16 +332,16 @@ export class Screener {
       if (day.signaled.has(a.symbol)) continue;
       if (inZone) {
         if (minutes < rules.minMinutesAfterOpen) continue;
-        if (pace == null || pace < rules.minVolPace) {
-          if (!day.lowVolLogged.has(a.symbol)) {
-            day.lowVolLogged.add(a.symbol);
-            this.log(`${a.symbol} is above its pivot ₹${pivot} but volume pace is only ${round(pace ?? 0, 1)}× — waiting for volume`);
-          }
-          continue;
+        const sig = this.confirmBreakout(a, q, ltp, pivot, pace, minutes);
+        if (sig) signals.push(sig);
+      } else if (day.armed.get(a.symbol) && ltp <= pivot) {
+        day.armed.delete(a.symbol);
+        const key = `${a.symbol}@${pivot}`;
+        this.falseAlarmSeen = this.falseAlarmSeen || new Set();
+        if (!this.falseAlarmSeen.has(key)) {
+          this.falseAlarmSeen.add(key); // log once per setup, not every time it wobbles around the pivot
+          this.log(`${a.symbol} fell back below its pivot ₹${pivot} before confirming — false alarm avoided`, 'warn');
         }
-        day.signaled.add(a.symbol);
-        signals.push({ type: 'breakout', symbol: a.symbol, a, price: ltp, pivot, chartStop: a.vcp.stop, volPace: pace });
-        this.log(`🚀 ${a.symbol} broke out above ₹${pivot} at ₹${ltp} on ${round(pace, 1)}× volume`, 'success');
       } else if (ltp > pivot * (1 + rules.buyZonePct / 100) && !day.extended.has(a.symbol)) {
         day.extended.add(a.symbol);
         this.log(`${a.symbol} is more than ${rules.buyZonePct}% above its pivot — too extended to buy`);

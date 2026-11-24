@@ -3,6 +3,7 @@
 
 import { roundTick } from './indicators.js';
 import { round } from './vcp.js';
+import { DEFAULT_CONFIRM } from './confirm.js';
 
 export const DEFAULT_RULES = {
   positionPct: 10, // % of total capital per stock
@@ -23,6 +24,9 @@ export const DEFAULT_RULES = {
   trailPct: 10,
   reentry: { enabled: true, windowDays: 10, maxPerSetup: 2 },
   slippagePct: 0.1, // paper-trading and backtest slippage per side
+  confirm: DEFAULT_CONFIRM, // breakout confirmation checks (see confirm.js)
+  twoStage: { enabled: true, firstFraction: 0.5, addTime: '15:15' }, // half at the breakout, rest at 15:15 if it holds
+  failedExit: { enabled: true, days: 2 }, // sell a new buy that closes back below the pivot within 2 days
 };
 
 /** Zerodha equity-delivery charges (NSE), per order side. */

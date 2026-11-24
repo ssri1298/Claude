@@ -20,6 +20,7 @@ import { prepareUniverse, analyzeUniverse } from './analyze.js';
 import { scoreSetup } from './scoring.js';
 import { DEFAULT_RULES, computeStop, positionSize, capacityCheck, managePosition, deliveryCharges, rMultiple } from './rules.js';
 import { volumeFraction } from './market.js';
+import { evaluateChecks } from './confirm.js';
 import { computeStats } from './stats.js';
 import { round } from './vcp.js';
 import { roundTick } from './indicators.js';
@@ -27,7 +28,14 @@ import { roundTick } from './indicators.js';
 export const HOLD_WINDOW_DAYS = 90; // trading days of 15-min data fetched after each breakout day
 const SLOTS = 25; // 09:15 … 15:15
 
-const mergeRules = (rules) => ({ ...DEFAULT_RULES, ...rules, reentry: { ...DEFAULT_RULES.reentry, ...(rules?.reentry || {}) } });
+const mergeRules = (rules) => ({
+  ...DEFAULT_RULES,
+  ...rules,
+  reentry: { ...DEFAULT_RULES.reentry, ...(rules?.reentry || {}) },
+  confirm: { ...DEFAULT_RULES.confirm, ...(rules?.confirm || {}) },
+  twoStage: { ...DEFAULT_RULES.twoStage, ...(rules?.twoStage || {}) },
+  failedExit: { ...DEFAULT_RULES.failedExit, ...(rules?.failedExit || {}) },
+});
 
 const isSetup = (a) => a.vcp?.valid && a.trend?.pass && ['near', 'breakout', 'forming'].includes(a.stage) && (a.vcp.distToPivotPct ?? 0) <= 0;
 
@@ -89,7 +97,10 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
   const closed = [];
   const equity = [];
   const stoppedOut = new Map();
-  const signals = { total: 0, taken: 0, skippedCapital: 0, skippedRegime: 0, skippedScore: 0, skippedStop: 0 };
+  const signals = { total: 0, taken: 0, skippedCapital: 0, skippedRegime: 0, skippedScore: 0, skippedStop: 0, notConfirmed: 0 };
+  const CF = R.confirm;
+  const TS = R.twoStage;
+  const FX = R.failedExit;
   const coverage = { entryDays15: 0, entryDaysDaily: 0, positionDays15: 0, positionDaysDaily: 0 };
   const slip = R.slippagePct / 100;
   let prevAnalysis = null;
@@ -136,6 +147,10 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
         pos.stop = a.newStop;
         if (pos.qtyOpen > 0 && c <= pos.stop) return sell(pos, pos.qtyOpen, pos.stop * (1 - slip), d, time, 'stop');
       }
+    }
+    // Failed breakout: closed back below the pivot within the first days → sell at the close
+    if (isLast && FX.enabled && pos.qtyOpen > 0 && !pos.partialDone && c < pos.pivot && dates.indexOf(d) - dates.indexOf(pos.entryDate) < (FX.days || 2)) {
+      return sell(pos, pos.qtyOpen, c * (1 - slip), d, time, 'failed');
     }
     if (pos.qtyOpen <= 0 || !pos.partialDone) return;
     let trailLevel = null;
@@ -191,7 +206,7 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
         const slots = slotsFor(s, d, i);
         if (slots.intraday) coverage.entryDays15++;
         else coverage.entryDaysDaily++;
-        cands.push({ a, s, i, pivot, chartStop, isRe, slots, cumVol: 0, done: false });
+        cands.push({ a, s, i, pivot, chartStop, isRe, slots, cumVol: 0, pv: 0, hi: -Infinity, lo: Infinity, dayOpen: null, orHigh: -Infinity, armed: false, everArmed: false, done: false });
       }
     }
     const posSlots = new Map();
@@ -214,6 +229,34 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
         const bar = ps.sl.map[k];
         if (bar) manageBar(pos, bar, d, ps.s, ps.i, isLast);
       }
+      // 1b. two-stage buy: at 15:15 add the rest if the breakout held (position ≥ 30 min old)
+      if (TS.enabled && k === SLOTS - 2) {
+        for (const pos of open) {
+          if (pos.stage !== 1 || di * SLOTS + k - pos.entryClock < 2) continue;
+          const ps = posSlots.get(pos);
+          const bar = ps?.sl.map[k];
+          if (!bar) continue;
+          const thr = pos.pivot * (1 + (CF.pivotBufferPct || 0) / 100);
+          const dayVol = ps.sl.map.slice(0, k + 1).reduce((acc, b) => acc + (b?.volume || 0), 0);
+          const a = prevAnalysis?.stocks.find((x) => x.symbol === pos.symbol);
+          const pace = a?.avgVol50 ? dayVol / volumeFraction((k + 1) * 15) / a.avgVol50 : null;
+          const holds = bar.close >= thr && bar.close > pos.stop && bar.close <= pos.pivot * (1 + R.buyZonePct / 100) && (pace == null || pace >= R.minVolPace);
+          pos.stage = 0;
+          if (!holds) continue;
+          const px = roundTick(bar.close * (1 + slip));
+          const q2 = Math.min(pos.plannedAdd, Math.floor((cash * 0.995) / px));
+          if (q2 < 1) continue;
+          const ch2 = deliveryCharges('BUY', q2, px);
+          cash -= q2 * px + ch2;
+          pos.entryPrice = round((pos.entryPrice * pos.qtyInitial + px * q2) / (pos.qtyInitial + q2));
+          pos.qtyInitial += q2;
+          pos.qtyOpen += q2;
+          pos.charges += ch2;
+          pos.realized -= ch2;
+          pos.stage = 2;
+          pos.fills.push({ date: d, time: bar.time, side: 'BUY', qty: q2, price: px, reason: 'second part' });
+        }
+      }
       // 2. entries on this candle's close
       const fired = [];
       for (const c of cands) {
@@ -221,11 +264,42 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
         const bar = c.slots.map[k];
         if (!bar) continue;
         c.cumVol += bar.volume || 0;
-        if (bar.close <= c.pivot || bar.close > c.pivot * (1 + R.buyZonePct / 100)) continue;
+        c.pv += ((bar.high + bar.low + bar.close) / 3) * (bar.volume || 0);
+        c.hi = Math.max(c.hi, bar.high);
+        c.lo = Math.min(c.lo, bar.low);
+        if (c.dayOpen == null) c.dayOpen = bar.open;
+        if (!bar.daily && k < 2) c.orHigh = Math.max(c.orHigh, bar.high); // first 30 minutes
         const minutes = bar.daily ? 375 : (k + 1) * 15;
+        if (bar.close <= c.pivot) {
+          c.armed = false; // fell back below the pivot before confirming
+          continue;
+        }
+        if (bar.close > c.pivot * (1 + R.buyZonePct / 100)) continue;
+        c.armed = true;
+        c.everArmed = true;
         if (minutes < R.minMinutesAfterOpen) continue;
         const pace = c.a.avgVol50 ? c.cumVol / volumeFraction(minutes) / c.a.avgVol50 : 0;
-        if (pace < R.minVolPace) continue;
+        if (CF.enabled) {
+          // the same checks the live Screener uses, evaluated on this candle's close
+          const { confirmed } = evaluateChecks(
+            {
+              ltp: bar.close,
+              pivot: c.pivot,
+              dayOpen: c.dayOpen,
+              dayHigh: c.hi,
+              dayLow: c.lo,
+              vwap: c.cumVol ? c.pv / c.cumVol : null,
+              orHigh: bar.daily ? null : k >= 2 ? c.orHigh : null,
+              lastBar: { c: bar.close, bucket: k },
+              armedBucket: k,
+              minutes,
+              volPace: pace,
+            },
+            CF,
+            R.minVolPace,
+          );
+          if (!confirmed) continue;
+        } else if (pace < R.minVolPace) continue;
         c.done = true;
         signals.total++;
         const entry = roundTick(bar.close * (1 + slip));
@@ -261,6 +335,8 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
           signals.skippedCapital++;
           continue;
         }
+        const planned = size.qty;
+        if (TS.enabled && planned >= 2) size.qty = Math.max(1, Math.floor(planned * (TS.firstFraction || 0.5)));
         const ch = deliveryCharges('BUY', size.qty, f.entry);
         cash -= size.qty * f.entry + ch;
         signals.taken++;
@@ -282,6 +358,9 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
           grade: f.grade,
           score: f.score,
           isReentry: f.isRe,
+          plannedAdd: planned - size.qty,
+          stage: planned - size.qty > 0 ? 1 : 0,
+          entryClock: di * SLOTS + k,
           fills: [{ date: d, time: f.time, side: 'BUY', qty: size.qty, price: f.entry, reason: f.isRe ? 're-entry' : 'breakout' }],
         };
         open.push(pos);
@@ -291,6 +370,7 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
       }
     }
 
+    for (const c of cands) if (c.everArmed && !c.done) signals.notConfirmed++;
     const invested = open.reduce((acc, p) => {
       const s = bySym.get(p.symbol);
       const i = s.idx.get(d);

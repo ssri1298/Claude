@@ -12,6 +12,7 @@ import { Telegram } from './notify/telegram.js';
 import { Parent } from './agents/parent.js';
 import { startQuotePusher } from './core/quotes.js';
 import { WebPush, toPlain } from './notify/webpush.js';
+import { IntradayTracker } from './core/intraday.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -151,6 +152,10 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
       .catch(() => {});
     return ctx.telegram?.send(text, buttons);
   };
+
+  // ---------- intraday candles / VWAP for breakout confirmation
+  ctx.intraday = new IntradayTracker(ctx.clock);
+  ctx.feed.on('ticks', (t) => ctx.intraday.onTicks(t));
 
   // ---------- agents
   const parent = new Parent(ctx);
