@@ -8,6 +8,7 @@ import { computeStats } from './engine/stats.js';
 import { rMultiple } from './engine/rules.js';
 import { round } from './engine/vcp.js';
 import { NIFTY50_TOKEN, parseNifty500Csv } from './broker/feeds.js';
+import { indexSnapshot, stockSnapshot } from './core/quotes.js';
 
 const wrap = (fn) => async (req, res) => {
   try {
@@ -174,6 +175,10 @@ export function mountApi(app, ctx, auth, { dbFile }) {
     }),
   );
 
+  app.get(
+    '/api/quotes',
+    wrap(() => ({ t: Date.now(), index: indexSnapshot(ctx), q: stockSnapshot(ctx), phase: ctx.parent.phase, demo: ctx.demo })),
+  );
   app.get('/api/watchlist', wrap(() => db.all('SELECT * FROM watchlist ORDER BY CASE status WHEN \'watching\' THEN 0 WHEN \'triggered\' THEN 1 ELSE 2 END, score DESC LIMIT 300')));
   app.get('/api/signals', wrap((req) => db.all('SELECT * FROM signals ORDER BY id DESC LIMIT ?', Math.min(500, Number(req.query.limit) || 100))));
   app.get(

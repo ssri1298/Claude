@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Crown, Radar, Sparkles, ShieldCheck, Check, X, KeyRound, Pause, Play, FastForward, Gauge, TrendingUp, TrendingDown, Activity , Timer } from 'lucide-react';
 import { api, useApi, go, inr, price, pct, signed, tone, istTime, compactInr } from '../lib.js';
-import { Card, Section, Pill, GradeBadge, Button, Spinner, Empty, RiskBar, Segmented, Contractions, StageBadge, Delta } from '../components/ui.jsx';
+import { Card, Section, Pill, GradeBadge, Button, Spinner, Empty, RiskBar, Segmented, Contractions, StageBadge, Delta , LivePrice } from '../components/ui.jsx';
+import { useQuote, useFlash } from '../live.js';
 
 const AGENT_ICON = { parent: Crown, screener: Radar, analyst: Sparkles, executor: ShieldCheck };
 const AGENT_CLS = { parent: 'bg-lav-soft text-lav', screener: 'bg-sky-soft text-sky', analyst: 'bg-peach-soft text-peach', executor: 'bg-mint-soft text-mint' };
@@ -321,7 +322,11 @@ function Mini({ label, value, sub, tone = '' }) {
   );
 }
 
-export function PositionCard({ p, actions }) {
+export function PositionCard({ p: base, actions }) {
+  // Re-price the position every second from the live Kite stream
+  const q = useQuote(base.symbol);
+  const p = q && base.status !== 'closed' ? { ...base, ltp: q.ltp, pnlPct: (q.ltp / base.entryPrice - 1) * 100, totalPnl: base.realized + base.qtyOpen * (q.ltp - base.entryPrice) } : base;
+  const dir = useFlash(p.ltp);
   return (
     <Card className="p-5" onClick={actions ? undefined : () => go(`/stock/${p.symbol}`)}>
       <div className="flex items-start justify-between gap-3">
@@ -336,7 +341,8 @@ export function PositionCard({ p, actions }) {
           </div>
         </div>
         <div className="text-right">
-          <div className={`text-[22px] font-bold num ${tone(p.pnlPct)}`}>{pct(p.pnlPct)}</div>
+          <div className={`text-[22px] font-bold num rounded-md px-1 -mr-1 ${tone(p.pnlPct)} ${dir === 'up' ? 'flash-up' : dir === 'down' ? 'flash-down' : ''}`}>{pct(p.pnlPct)}</div>
+          <div className="text-[13px] text-ink2 num">now {price(p.ltp)}</div>
           <div className={`text-[15px] num font-semibold ${tone(p.totalPnl)}`}>{signed(p.totalPnl)}</div>
         </div>
       </div>
@@ -358,8 +364,8 @@ function SetupCard({ s }) {
       </div>
       <div className="flex items-end justify-between mt-4">
         <div>
-          <div className="text-[13px] text-ink2 font-semibold">Pivot</div>
-          <div className="num font-bold text-[19px]">{price(s.pivot)}</div>
+          <div className="text-[13px] text-ink2 font-semibold">Pivot {price(s.pivot)}</div>
+          <LivePrice symbol={s.symbol} fallback={s.ltp} className="font-bold text-[19px]" />
         </div>
         <Contractions list={s.contractions} />
       </div>
@@ -394,7 +400,7 @@ export function EventRow({ e }) {
           <span className="text-[14px] font-semibold text-ink2">{e.agent}</span>
           <span className="text-[13px] text-ink3 num shrink-0">{istTime(e.ts)}</span>
         </div>
-        <div className={`text-[16px] leading-snug ${e.level === 'error' ? 'text-coral' : ''}`}>
+        <div className={`text-[16px] leading-snug break-words [overflow-wrap:anywhere] ${e.level === 'error' ? 'text-coral' : ''}`}>
           {e.level !== 'info' && <span className={`${LEVEL_TONE[e.level]} mr-1`}>●</span>}
           {e.message}
         </div>

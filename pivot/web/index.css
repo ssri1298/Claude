@@ -141,3 +141,9 @@ input[type='number']::-webkit-inner-spin-button { opacity: 0.4; }
 .dark .hairline > :not([hidden]) ~ :not([hidden]) {
   border-color: rgb(var(--line) / 0.28);
 }
+
+/* live price flash */
+.flash-up { animation: flash-up 0.8s ease-out; }
+.flash-down { animation: flash-down 0.8s ease-out; }
+@keyframes flash-up { 0% { background: rgb(var(--mint) / 0.28); } 100% { background: transparent; } }
+@keyframes flash-down { 0% { background: rgb(var(--coral) / 0.28); } 100% { background: transparent; } }

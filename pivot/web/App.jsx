@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Sun, Radar, Briefcase, BarChart3, FlaskConical, Bot, Settings as SettingsIcon, MoreHorizontal, Diamond } from 'lucide-react';
-import { api, useRoute, go, connectStream, disconnectStream } from './lib.js';
+import { api, useRoute, go, connectStream, disconnectStream, price } from './lib.js';
+import { startLive, useIndex, usePhase, useFlash } from './live.js';
 import { Spinner } from './components/ui.jsx';
 import Login from './pages/Login.jsx';
 import Today from './pages/Today.jsx';
@@ -39,7 +40,10 @@ export default function App() {
     return () => window.removeEventListener('pivot:logout', h);
   }, []);
   useEffect(() => {
-    if (auth?.loggedIn) connectStream();
+    if (auth?.loggedIn) {
+      connectStream();
+      startLive();
+    }
     else disconnectStream();
   }, [auth?.loggedIn]);
 
@@ -107,7 +111,8 @@ export default function App() {
       </aside>
 
       <main className="flex-1 min-w-0">
-        <div className="mx-auto max-w-[1180px] px-4 sm:px-6 lg:px-10 pt-[max(env(safe-area-inset-top),16px)] pb-32 lg:pb-12">{page}</div>
+        <NiftyBar />
+        <div className="mx-auto max-w-[1180px] px-4 sm:px-6 lg:px-10 pt-3 pb-32 lg:pb-12">{page}</div>
       </main>
 
       {/* Mobile tab bar */}
@@ -121,6 +126,42 @@ export default function App() {
           ))}
         </div>
       </nav>
+    </div>
+  );
+}
+
+const PHASE = { market: ['Market open', 'bg-mint pulse-dot text-mint'], 'pre-market': ['Pre-market', 'bg-butter text-butter'], 'post-market': ['Market closed', 'bg-ink3 text-ink3'], holiday: ['Holiday', 'bg-ink3 text-ink3'] };
+
+/** Sticky live NIFTY 50 bar at the top of every page. */
+function NiftyBar() {
+  const ix = useIndex();
+  const phase = usePhase();
+  const dir = useFlash(ix?.ltp);
+  const up = (ix?.change ?? 0) >= 0;
+  const [label, dot] = PHASE[phase] || ['', 'bg-ink3 text-ink3'];
+  return (
+    <div className="sticky top-0 z-30 glass border-b hairline pt-[env(safe-area-inset-top)]">
+      <div className="mx-auto max-w-[1180px] px-4 sm:px-6 lg:px-10 h-12 flex items-center gap-3">
+        <span className="font-bold text-[15px] tracking-wide">NIFTY 50</span>
+        {ix ? (
+          <>
+            <span className={`num font-bold text-[18px] rounded-md px-1 ${dir === 'up' ? 'flash-up' : dir === 'down' ? 'flash-down' : ''}`}>{price(ix.ltp).replace('₹', '')}</span>
+            <span className={`num font-semibold text-[15px] ${up ? 'text-mint' : 'text-coral'}`}>
+              {up ? '▲' : '▼'} <span className="hidden min-[380px]:inline">{Math.abs(ix.change).toFixed(2)} (</span>
+              {up ? '+' : '−'}
+              {Math.abs(ix.changePct).toFixed(2)}%<span className="hidden min-[380px]:inline">)</span>
+            </span>
+          </>
+        ) : (
+          <span className="text-ink3 text-[15px]">waiting for Kite…</span>
+        )}
+        {label && (
+          <span className="ml-auto flex items-center gap-1.5 text-[13px] font-semibold text-ink2 whitespace-nowrap">
+            <span className={`h-2 w-2 rounded-full ${dot}`} />
+            <span className="hidden min-[400px]:inline">{label}</span>
+          </span>
+        )}
+      </div>
     </div>
   );
 }

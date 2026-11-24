@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X, ChevronRight, Loader2 } from 'lucide-react';
 import { pct, price } from '../lib.js';
+import { useQuote, useFlash } from '../live.js';
 
 export function Card({ className = '', children, onClick, as: As = 'div', ...rest }) {
   return (
@@ -33,7 +34,7 @@ export function Section({ title, action, children, className = '', subtitle }) {
 
 export function LargeTitle({ title, subtitle, right }) {
   return (
-    <header className="flex items-end justify-between gap-4 pt-2 pb-5">
+    <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 pt-2 pb-5">
       <div className="min-w-0">
         {subtitle && <div className="text-ink2 text-[15px] font-semibold uppercase tracking-wide">{subtitle}</div>}
         <h1 className="text-[34px] sm:text-[40px] leading-tight font-bold tracking-tight truncate">{title}</h1>
@@ -344,4 +345,18 @@ export function Contractions({ list = [] }) {
 export function Delta({ value, suffix = '%', d = 1, className = '' }) {
   if (value == null) return <span className="text-ink3">—</span>;
   return <span className={`num font-semibold ${value > 0 ? 'text-mint' : value < 0 ? 'text-coral' : 'text-ink2'} ${className}`}>{suffix === '%' ? pct(value, d) : value}</span>;
+}
+
+/** A price that updates live from Kite and flashes green/red when it ticks. */
+export function LivePrice({ symbol, fallback, className = '', showChange = false, changeClass = 'text-[14px]' }) {
+  const q = useQuote(symbol);
+  const ltp = q?.ltp ?? fallback?.ltp ?? fallback;
+  const chg = q?.changePct ?? fallback?.changePct;
+  const dir = useFlash(ltp);
+  return (
+    <span className="inline-flex flex-col items-end">
+      <span className={`num rounded-md px-1 -mx-1 transition-colors ${dir === 'up' ? 'flash-up' : dir === 'down' ? 'flash-down' : ''} ${className}`}>{price(ltp)}</span>
+      {showChange && <Delta value={chg} className={changeClass} />}
+    </span>
+  );
 }

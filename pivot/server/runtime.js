@@ -10,6 +10,7 @@ import { LiveBroker } from './broker/live.js';
 import { DemoFeed } from './demo/demoFeed.js';
 import { Telegram } from './notify/telegram.js';
 import { Parent } from './agents/parent.js';
+import { startQuotePusher } from './core/quotes.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -153,11 +154,13 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
   ctx.stop = () => {
     ctx.stopped = true;
     clearInterval(ctx.interval);
+    clearInterval(ctx.quoteTimer);
     ctx.telegram?.stop();
     ctx.feed?.stop?.();
   };
 
   if (autostart) {
+    ctx.quoteTimer = startQuotePusher(ctx);
     if (demo) startDemoDriver(ctx);
     else {
       await restoreKiteSession();

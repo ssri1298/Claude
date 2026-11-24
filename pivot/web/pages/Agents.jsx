@@ -87,12 +87,12 @@ export default function Agents() {
       <Section title="Daily routine" subtitle="Runs automatically on every trading day (IST)">
         <Card className="p-2 sm:p-3">
           {SCHEDULE.map(([t, who, what, Icon], i) => (
-            <div key={i} className="flex gap-4 px-3 py-3">
-              <div className="w-[104px] shrink-0 text-[15px] font-semibold num text-ink2 pt-1">{t}</div>
+            <div key={i} className="flex gap-3 sm:gap-4 px-2 sm:px-3 py-3">
+              <div className="w-[72px] sm:w-[104px] shrink-0 text-[14px] sm:text-[15px] font-semibold num text-ink2 pt-1 leading-tight">{t}</div>
               <span className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${TONE[who]}`}>
                 <Icon size={18} />
               </span>
-              <div>
+              <div className="min-w-0">
                 <div className="font-semibold">{who}</div>
                 <div className="text-ink2 text-[15px] leading-snug">{what}</div>
               </div>
@@ -101,9 +101,8 @@ export default function Agents() {
         </Card>
       </Section>
 
-      <Section
-        title="Activity log"
-        action={
+      <Section title="Activity log">
+        <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0 mb-3">
           <Segmented
             size="sm"
             value={agent}
@@ -116,8 +115,7 @@ export default function Agents() {
               { value: 'Parent', label: 'Parent' },
             ]}
           />
-        }
-      >
+        </div>
         {!events ? (
           <Spinner />
         ) : (

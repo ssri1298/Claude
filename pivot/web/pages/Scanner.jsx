@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Search, Radar, Eye } from 'lucide-react';
 import { useApi, go, price, niceDate } from '../lib.js';
-import { Card, LargeTitle, Segmented, GradeBadge, Spinner, Empty, Contractions, StageBadge, Delta, Pill } from '../components/ui.jsx';
+import { Card, LargeTitle, Segmented, GradeBadge, Spinner, Empty, Contractions, StageBadge, Delta, Pill, LivePrice } from '../components/ui.jsx';
 
 export default function Scanner({ query }) {
   const [filter, setFilter] = useState(query.filter || 'setups');
@@ -66,8 +66,7 @@ function ScanList({ rows }) {
                 <span className="ml-2 text-ink2 text-[14px] num">{r.score}</span>
               </div>
               <div className="text-right num">
-                <div className="font-semibold">{price(r.ltp)}</div>
-                <Delta value={r.changePct} className="text-[14px]" />
+                <LivePrice symbol={r.symbol} fallback={{ ltp: r.ltp, changePct: r.changePct }} showChange className="font-semibold" />
               </div>
               <div className="text-right num">
                 <div className="font-semibold">{r.pivot ? price(r.pivot) : '—'}</div>
@@ -88,7 +87,7 @@ function ScanList({ rows }) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-bold text-[18px] truncate">{r.symbol}</span>
-                  <span className="num font-semibold">{price(r.ltp)}</span>
+                  <LivePrice symbol={r.symbol} fallback={r.ltp} className="font-semibold" />
                 </div>
                 <div className="flex items-center justify-between gap-2 text-[14px] text-ink2">
                   <span className="truncate">

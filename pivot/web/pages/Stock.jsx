@@ -1,6 +1,6 @@
 import { ChevronLeft, Check, X, AlertTriangle } from 'lucide-react';
 import { useApi, price, pct, istDateTime, niceDate } from '../lib.js';
-import { Card, Section, Pill, GradeBadge, Spinner, Empty, ScoreRing, StageBadge, Delta } from '../components/ui.jsx';
+import { Card, Section, Pill, GradeBadge, Spinner, Empty, ScoreRing, StageBadge, Delta, LivePrice } from '../components/ui.jsx';
 import PriceChart from '../components/PriceChart.jsx';
 import { PositionCard } from './Today.jsx';
 
@@ -30,8 +30,7 @@ export default function Stock({ symbol }) {
           </div>
         </div>
         <div className="text-right">
-          <div className="text-[34px] font-bold num tracking-tight">{price(ltp)}</div>
-          <Delta value={live?.changePct ?? a?.changePct} className="text-[18px]" />
+          <LivePrice symbol={symbol} fallback={{ ltp, changePct: live?.changePct ?? a?.changePct }} showChange className="text-[34px] font-bold tracking-tight" changeClass="text-[18px]" />
         </div>
       </header>
 
