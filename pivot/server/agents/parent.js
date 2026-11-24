@@ -1,0 +1,213 @@
+// PARENT AGENT — runs the trading day autonomously and coordinates the three sub-agents.
+//
+//  08:00  Morning: make sure Kite is logged in (sends you a one-tap login link on Telegram)
+//  08:30  Screener prepares: Nifty 500 data → trend template → VCP setups → watchlist; morning brief
+//  09:15–15:30 every minute: Screener scans all 500 → Analyst rates breakouts → Executor sizes,
+//         asks for approval (or buys), and manages stops / partial profits / trailing every second
+//  15:20  Close check: 21-EMA trailing exits
+//  15:40  Post-close: today's candles, fresh analysis for tomorrow, equity snapshot, evening report
+
+import { Screener } from './screener.js';
+import { Analyst } from './analyst.js';
+import { Executor } from './executor.js';
+import { ist, toMinutes, MARKET, isTradingDay } from '../core/time.js';
+import { round } from '../engine/vcp.js';
+import { esc } from '../notify/telegram.js';
+
+const NAME = 'Parent';
+const inr = (x) => '₹' + Math.round(Number(x)).toLocaleString('en-IN');
+
+export class Parent {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.screener = new Screener(ctx);
+    this.analyst = new Analyst(ctx);
+    this.executor = new Executor(ctx);
+    ctx.agents = { screener: this.screener, analyst: this.analyst, executor: this.executor, parent: this };
+    this.running = false;
+    this.lastMinuteKey = null;
+    this.phase = 'starting';
+    this.lastReconcile = 0;
+  }
+
+  log(msg, level, data) {
+    this.ctx.bus.log(NAME, msg, { level, data });
+  }
+
+  newDay(date) {
+    this.ctx.day = { date, jobs: {}, signaled: new Set(), failed: new Set(), extended: new Set(), lowVolLogged: new Set(), nearNotified: new Set(), ticksSeen: false };
+  }
+
+  isTradingDate(date) {
+    const feed = this.ctx.feed;
+    if (feed.isTradingDate) return feed.isTradingDate(date);
+    return isTradingDay(date, this.ctx.settings.holidays);
+  }
+
+  /** Needs a working market-data connection (Kite logged in, or demo). */
+  dataReady() {
+    return this.ctx.feed.kind === 'demo' || !!this.ctx.kiteSession?.connected;
+  }
+
+  /** One heartbeat (every second in real mode; every simulated minute in demo). */
+  async tick() {
+    if (this.running) return;
+    this.running = true;
+    try {
+      await this._tick();
+    } catch (e) {
+      this.log(`Unexpected error: ${e.message}`, 'error');
+      console.error(e);
+    } finally {
+      this.running = false;
+    }
+  }
+
+  async _tick() {
+    const { settings } = this.ctx;
+    const t = ist(this.ctx.clock.now());
+    if (!this.ctx.day || this.ctx.day.date !== t.date) this.newDay(t.date);
+    const day = this.ctx.day;
+    const sched = settings.schedule;
+    const at = (hhmm) => t.minutes >= toMinutes(hhmm);
+
+    if (!this.isTradingDate(t.date)) {
+      this.phase = 'holiday';
+      if (!day.jobs.holidayLogged) {
+        day.jobs.holidayLogged = true;
+        this.log(`${t.date} is not a trading day — agents resting. Open positions are safe with their stops${settings.backupGtt ? ' (and backup GTTs at Zerodha)' : ''}.`);
+      }
+      return;
+    }
+
+    // 08:00 login reminder
+    if (at(sched.login) && !day.jobs.login && t.minutes < MARKET.close) {
+      day.jobs.login = true;
+      if (!this.dataReady()) this.remindLogin();
+    }
+    // Re-remind at 08:45 and 09:05 if still not logged in
+    for (const r of ['08:45', '09:05']) {
+      if (at(r) && !day.jobs['login' + r] && t.minutes < toMinutes('09:30')) {
+        day.jobs['login' + r] = true;
+        if (!this.dataReady()) this.remindLogin();
+      }
+    }
+
+    // 08:30 preparation (or as soon as possible if the app started late / login came late)
+    const prepDue = at(sched.prep) && t.minutes < MARKET.close;
+    if (prepDue && !day.jobs.prep && this.dataReady() && !(day.jobs.prepRetryAt > Date.now())) {
+      // runs in the background so stops keep being checked while data downloads
+      day.jobs.prep = 'running';
+      this.screener
+        .prepare({ reason: t.minutes > MARKET.open ? 'late start' : 'morning' })
+        .then(() => {
+          day.jobs.prep = 'done';
+          return this.morningBrief();
+        })
+        .catch(() => {
+          day.jobs.prep = null;
+          day.jobs.prepRetryAt = Date.now() + 60000;
+        });
+    }
+
+    const inSession = t.minutes >= MARKET.open && t.minutes < MARKET.close;
+    this.phase = t.minutes < MARKET.open ? 'pre-market' : inSession ? 'market' : 'post-market';
+
+    if (inSession && this.dataReady()) {
+      // positions: every heartbeat (stops act within ~1 second)
+      const isCloseCheck = at(sched.closeCheck) && !day.jobs.closeCheck;
+      if (isCloseCheck) {
+        day.jobs.closeCheck = true;
+        this.log('Close check — evaluating trailing exits (close below 21-day EMA)');
+      }
+      await this.executor.onTick({ isCloseCheck });
+
+      // minute scan
+      const minuteKey = `${t.date} ${t.minutes}`;
+      if (minuteKey !== this.lastMinuteKey && day.jobs.prep === 'done') {
+        this.lastMinuteKey = minuteKey;
+        await this.minuteCycle(t);
+      }
+      if (this.ctx.liveBroker && Date.now() - this.lastReconcile > 10 * 60000) {
+        this.lastReconcile = Date.now();
+        await this.executor.reconcile();
+      }
+    }
+
+    // 15:40 post-close
+    if (at(sched.post) && !day.jobs.post && this.dataReady() && !(day.jobs.postRetryAt > Date.now()) && day.jobs.prep !== 'running') {
+      day.jobs.post = 'running';
+      (async () => {
+        await this.screener.prepare({ reason: 'after close' });
+        await this.executor.snapshotEquity();
+        await this.eveningReport();
+      })()
+        .then(() => (day.jobs.post = 'done'))
+        .catch(() => {
+          day.jobs.post = null;
+          day.jobs.postRetryAt = Date.now() + 5 * 60000;
+        });
+    }
+  }
+
+  async minuteCycle(t) {
+    const signals = this.screener.scanMinute();
+    if (signals.length) {
+      const ranked = this.analyst.rank(signals);
+      for (const s of ranked) await this.executor.consider(s);
+    }
+    this.executor.expireApprovals();
+    if (t.minutes - MARKET.open === 30 && !this.ctx.feed.status().lastTick && this.ctx.feed.kind === 'kite') {
+      this.log('No live prices received 30 minutes after the open — is today a market holiday? Add it in Settings → Holidays if so.', 'warn');
+    }
+    this.ctx.bus.push('scan', { at: t.hhmm, ...this.screener.status.live });
+  }
+
+  remindLogin() {
+    const url = this.ctx.publicUrl ? `${this.ctx.publicUrl}/api/kite/login` : null;
+    this.log('Waiting for your daily Kite login (required by Zerodha every morning)', 'warn');
+    this.ctx.notify?.(
+      'login',
+      '🔑 <b>Good morning!</b> Please log in to Zerodha so Pivot can trade today.\nZerodha requires this once every day.',
+      url ? [[{ text: 'Log in to Kite', url }]] : undefined,
+    );
+  }
+
+  async morningBrief() {
+    const top = this.analyst.topSetups(6);
+    const m = this.ctx.market;
+    const c = this.screener.status.counts;
+    const cap = await this.executor.capital();
+    const lines = [
+      `☀️ <b>Morning brief</b> · ${this.ctx.day.date}`,
+      `Market: <b>${esc(m?.label || 'Unknown')}</b>${m?.regime === 'downtrend' && this.ctx.settings.marketFilter === 'pause' ? ' — new buys paused' : ''}`,
+      `${c.trendPass} stocks pass the trend template · ${c.setups} VCP setups`,
+      `Capital ${inr(cap.equity)} · free cash ${inr(cap.cash)} · ${this.executor.openPositions().length} open positions`,
+      '',
+      top.length ? '<b>Top setups</b>' : 'No high-quality setups today.',
+      ...top.map((a, i) => `${i + 1}. <b>${esc(a.symbol)}</b> ${a.grade} (${a.score}) · pivot ₹${a.vcp.pivot} · ${round(Math.abs(a.vcp.distToPivotPct), 1)}% away`),
+    ];
+    this.log(`Morning brief ready — ${top.length} top setups, market ${m?.label}`);
+    this.ctx.notify?.('morningBrief', lines.join('\n'));
+  }
+
+  async eveningReport() {
+    const { db } = this.ctx;
+    const date = this.ctx.day.date;
+    const kind = this.executor.mode;
+    const fills = db.all("SELECT f.*, p.symbol, p.kind FROM fills f JOIN positions p ON p.id = f.position_id WHERE f.ts >= ? AND p.kind = ?", date, kind);
+    const sigs = db.all('SELECT status, COUNT(*) AS n FROM signals WHERE date = ? GROUP BY status', date);
+    const cap = await this.executor.capital();
+    const closedToday = db.all("SELECT * FROM positions WHERE kind = ? AND exit_date = ?", kind, date);
+    const realizedToday = closedToday.reduce((s, p) => s + p.realized, 0);
+    const lines = [
+      `🌙 <b>Evening report</b> · ${date}${kind === 'paper' ? ' <i>[paper]</i>' : ''}`,
+      `Equity ${inr(cap.equity)} · open P&L ${inr(cap.openPnl)} · free cash ${inr(cap.cash)}`,
+      `Buys: ${fills.filter((f) => f.side === 'BUY').length} · Sells: ${fills.filter((f) => f.side === 'SELL').length} · Closed trades P&L ${inr(realizedToday)}`,
+      `Signals: ${sigs.map((s) => `${s.n} ${s.status.replace(/_/g, ' ')}`).join(', ') || 'none'}`,
+      `Watching ${db.get("SELECT COUNT(*) AS n FROM watchlist WHERE status = 'watching'").n} setups for tomorrow.`,
+    ];
+    this.log('Day complete — evening report sent', 'success');
+    this.ctx.notify?.('eveningReport', lines.join('\n'));
+  }
+}

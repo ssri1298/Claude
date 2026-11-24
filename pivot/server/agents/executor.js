@@ -1,0 +1,575 @@
+// SUB-AGENT 3 — EXECUTOR (capital & risk manager)
+// Sizes each trade (10% of capital by default), sets the stop (chart-based, max 6%), asks you to
+// approve (or buys automatically when you turn that on), places the order and a backup GTT stop,
+// then manages every open position tick by tick: stop-loss, one-third profit at +10%, breakeven
+// stop, and the 21-EMA trailing exit. With no free capital, it records the signal as a
+// "shadow trade" so you can see later how the idea would have worked.
+
+import { computeStop, positionSize, capacityCheck, managePosition, deliveryCharges, rMultiple } from '../engine/rules.js';
+import { emaNext, roundTick } from '../engine/indicators.js';
+import { round } from '../engine/vcp.js';
+import { ist, tradingDaysBetween } from '../core/time.js';
+import { esc } from '../notify/telegram.js';
+
+const NAME = 'Executor';
+const inr = (x) => '₹' + Number(x).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+
+export class Executor {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.busy = new Set(); // position ids / symbols with an order in flight
+    this.retryAt = new Map();
+    this.failures = new Map();
+    this.status = { state: 'idle', lastAction: null };
+  }
+
+  log(msg, level, data) {
+    this.ctx.bus.log(NAME, msg, { level, data });
+  }
+
+  get mode() {
+    return this.ctx.settings.tradingMode === 'live' ? 'live' : 'paper';
+  }
+
+  now() {
+    return this.ctx.clock.now();
+  }
+
+  // ------------------------------------------------------------------ capital
+  openPositions(kind = this.mode) {
+    return this.ctx.db.all("SELECT * FROM positions WHERE kind = ? AND status = 'open'", kind);
+  }
+
+  ltpOf(symbol, fallback) {
+    const a = this.ctx.analysis?.get(symbol);
+    const q = a && this.ctx.quotes.get(a.token);
+    return q?.ltp || fallback;
+  }
+
+  async capital(kind = this.mode) {
+    const { db, settings } = this.ctx;
+    const open = this.openPositions(kind);
+    const marketValue = open.reduce((s, p) => s + p.qty_open * this.ltpOf(p.symbol, p.last_price || p.entry_price), 0);
+    const costOpen = open.reduce((s, p) => s + p.qty_open * p.entry_price, 0);
+    if (kind === 'live') {
+      let cash = 0;
+      try {
+        cash = (await this.ctx.liveBroker.funds()).cash;
+      } catch (e) {
+        this.log(`Could not read Kite funds: ${e.message}`, 'warn');
+      }
+      let equity = cash + marketValue;
+      if (settings.capitalSource === 'fixed') {
+        equity = settings.fixedCapital;
+        cash = Math.min(cash, Math.max(0, settings.fixedCapital - costOpen));
+      }
+      return { equity: round(equity), cash: round(cash), invested: round(costOpen), marketValue: round(marketValue), openPnl: round(marketValue - costOpen) };
+    }
+    const realized = db.get('SELECT COALESCE(SUM(realized),0) AS r FROM positions WHERE kind = ?', kind).r;
+    const start = settings.paperCapital;
+    const cash = start + realized - costOpen;
+    return { equity: round(cash + marketValue), cash: round(cash), invested: round(costOpen), marketValue: round(marketValue), openPnl: round(marketValue - costOpen), start, realized: round(realized) };
+  }
+
+  // ------------------------------------------------------------------ new signals
+  async consider(sig) {
+    const { db, settings, clock } = this.ctx;
+    const rules = settings.rules;
+    const kind = this.mode;
+    const tick = this.tickOf(sig.symbol);
+    const entry = roundTick(Math.min(sig.price * 1.002, sig.pivot * (1 + rules.buyZonePct / 100)), tick);
+    const stopRes = computeStop(entry, sig.chartStop, rules);
+
+    const setShadow = (reason) => this.openShadow(sig, entry, stopRes.stop ?? roundTick(entry * (1 - rules.maxStopPct / 100), tick), reason);
+
+    if (sig.status !== 'ranked') {
+      setShadow(sig.reason);
+      return;
+    }
+    if (settings.agentsPaused) {
+      this.markSignal(sig.id, 'skipped_paused', 'Agents are paused');
+      setShadow('Agents paused');
+      return;
+    }
+    if (stopRes.skip) {
+      this.markSignal(sig.id, 'skipped_stop', stopRes.reason);
+      this.log(`${sig.symbol}: skipped — ${stopRes.reason}`, 'warn');
+      return;
+    }
+    if (db.get("SELECT id FROM positions WHERE symbol = ? AND kind = ? AND status = 'open'", sig.symbol, kind)) {
+      this.markSignal(sig.id, 'skipped_held', 'Already holding this stock');
+      return;
+    }
+    if (db.get("SELECT id FROM approvals WHERE symbol = ? AND status = 'pending'", sig.symbol)) return;
+
+    const open = this.openPositions(kind);
+    const cap = capacityCheck({ openPositions: open, industry: sig.a.industry, rules });
+    const capital = await this.capital(kind);
+    const size = positionSize({ equity: sig.half ? capital.equity / 2 : capital.equity, cash: capital.cash, price: entry, rules });
+    if (!cap.ok || size.qty < 1 || (size.limitedByCash && size.value < size.target * 0.5)) {
+      const why = !cap.ok ? cap.reason : `Not enough free cash (${inr(capital.cash)} available, ${inr(size.target)} needed)`;
+      this.markSignal(sig.id, 'skipped_capital', why);
+      this.log(`${sig.symbol} (${sig.grade}) — ${why}. Tracking it as a shadow trade for future learning.`, 'warn');
+      setShadow(why);
+      return;
+    }
+
+    const proposal = {
+      signalId: sig.id,
+      type: sig.type,
+      symbol: sig.symbol,
+      token: sig.a.token,
+      industry: sig.a.industry,
+      qty: size.qty,
+      price: entry,
+      pivot: sig.pivot,
+      stop: stopRes.stop,
+      stopPct: stopRes.stopPct,
+      stopNote: stopRes.note,
+      value: round(size.qty * entry),
+      pctOfCapital: round(((size.qty * entry) / capital.equity) * 100, 1),
+      riskAmount: round(size.qty * (entry - stopRes.stop)),
+      riskPct: round(((size.qty * (entry - stopRes.stop)) / capital.equity) * 100, 2),
+      target: roundTick(entry * (1 + rules.partialAtPct / 100), tick),
+      score: sig.score,
+      grade: sig.grade,
+      volPace: round(sig.volPace, 2),
+      good: sig.good,
+      bad: sig.bad,
+      parts: sig.parts,
+      firstEntryDate: sig.firstEntryDate,
+      kind,
+    };
+
+    if (!settings.confirmTrades) {
+      this.markSignal(sig.id, 'auto', 'Auto-executed');
+      this.execute(proposal, 'auto').catch((e) => this.log(`Order for ${sig.symbol} failed: ${e.message}`, 'error'));
+      return;
+    }
+    const expires = new Date(clock.now().getTime() + settings.approvalMinutes * 60000);
+    const id = db.insert('approvals', {
+      ts: clock.now().toISOString(),
+      signal_id: sig.id,
+      symbol: sig.symbol,
+      side: 'BUY',
+      qty: proposal.qty,
+      price: proposal.price,
+      stop: proposal.stop,
+      status: 'pending',
+      expires: expires.toISOString(),
+      data: JSON.stringify(proposal),
+    });
+    this.markSignal(sig.id, 'awaiting_approval', '');
+    this.log(`Asking you to approve: BUY ${proposal.qty} ${sig.symbol} @ ~${inr(entry)} (stop ${inr(proposal.stop)}, ${proposal.stopPct}%)`, 'info');
+    this.ctx.bus.push('approval', { id });
+    const msg = await this.ctx.notify?.('proposals', this.proposalText(proposal, expires), [
+      [
+        { text: '✅ Approve', callback_data: `approve:${id}` },
+        { text: '❌ Reject', callback_data: `reject:${id}` },
+      ],
+      ...(this.ctx.publicUrl ? [[{ text: 'Open in Pivot', url: `${this.ctx.publicUrl}/#/stock/${sig.symbol}` }]] : []),
+    ]);
+    if (msg?.message_id) db.run('UPDATE approvals SET data = json_set(data, "$.tgMessageId", ?) WHERE id = ?', msg.message_id, id);
+  }
+
+  proposalText(p, expires) {
+    const t = ist(expires);
+    return [
+      `${p.type === 'reentry' ? '🔁 <b>RE-ENTRY</b>' : '🟢 <b>BUY SIGNAL</b>'} · <b>${esc(p.symbol)}</b>  ${p.grade} (${p.score}/100)${p.kind === 'paper' ? '  <i>[paper]</i>' : ''}`,
+      `Breakout above ${inr(p.pivot)} on ${p.volPace}× volume`,
+      '',
+      `Buy <b>${p.qty}</b> @ ~${inr(p.price)} = <b>${inr(p.value)}</b> (${p.pctOfCapital}% of capital)`,
+      `Stop ${inr(p.stop)} (−${p.stopPct}%) · risk ${inr(p.riskAmount)} (${p.riskPct}%)`,
+      `Sell ⅓ at ${inr(p.target)} (+10%), then stop → breakeven`,
+      '',
+      ...(p.good || []).slice(0, 4).map((g) => `✓ ${esc(g)}`),
+      ...(p.bad || []).slice(0, 2).map((b) => `⚠︎ ${esc(b)}`),
+      '',
+      `<i>Expires at ${t.hhmm} IST</i>`,
+    ].join('\n');
+  }
+
+  markSignal(id, status, reason) {
+    if (id) this.ctx.db.run('UPDATE signals SET status = ?, reason = ? WHERE id = ?', status, reason, id);
+  }
+
+  tickOf(symbol) {
+    return this.ctx.db.get('SELECT tick FROM universe WHERE symbol = ?', symbol)?.tick || 0.05;
+  }
+
+  async decide(id, decision, by = 'app') {
+    const { db, clock } = this.ctx;
+    const ap = db.get('SELECT * FROM approvals WHERE id = ?', id);
+    if (!ap) return 'Not found';
+    if (ap.status !== 'pending') return `Already ${ap.status}`;
+    const p = JSON.parse(ap.data);
+    const done = (status, note) => {
+      db.run('UPDATE approvals SET status = ?, decided_ts = ?, decided_by = ? WHERE id = ?', status, clock.now().toISOString(), by, id);
+      this.ctx.bus.push('approval', { id });
+      if (p.tgMessageId) this.ctx.telegram?.edit(p.tgMessageId, `${note} · <b>${esc(p.symbol)}</b> ${p.qty} @ ~${inr(p.price)}`);
+    };
+    if (decision === 'reject') {
+      done('rejected', '❌ Rejected');
+      this.markSignal(ap.signal_id, 'rejected', `Rejected by you (${by})`);
+      this.log(`You rejected ${p.symbol}. Tracking it as a shadow trade.`);
+      const sig = db.get('SELECT * FROM signals WHERE id = ?', ap.signal_id);
+      this.openShadow({ symbol: p.symbol, a: { token: p.token, industry: p.industry }, pivot: p.pivot, score: p.score, grade: p.grade, id: ap.signal_id, type: p.type, price: sig?.price ?? p.price }, p.price, p.stop, 'Rejected by you');
+      return 'Rejected';
+    }
+    if (new Date(ap.expires) < clock.now()) {
+      done('expired', '⌛ Expired');
+      return 'This signal has expired';
+    }
+    // Re-check price before buying
+    const ltp = this.ltpOf(p.symbol, p.price);
+    const zoneTop = p.pivot * (1 + this.ctx.settings.rules.buyZonePct / 100);
+    if (ltp > zoneTop) {
+      done('expired', '⌛ Price ran past the buy zone');
+      this.markSignal(ap.signal_id, 'expired', 'Price ran past the buy zone before approval');
+      return `Price ${inr(ltp)} is now above the buy zone (${inr(zoneTop)}) — not buying`;
+    }
+    if (ltp <= p.stop) {
+      done('expired', '⌛ Price fell to the stop');
+      return 'Price has fallen to the stop — not buying';
+    }
+    done('approved', '✅ Approved');
+    this.markSignal(ap.signal_id, 'approved', `Approved (${by})`);
+    const tick = this.tickOf(p.symbol);
+    const entry = roundTick(Math.min(ltp * 1.002, zoneTop), tick);
+    // keep the same risk structure: if price moved, re-derive the stop from the chart stop
+    const st = computeStop(entry, p.stop, this.ctx.settings.rules);
+    const prop = { ...p, price: entry, stop: st.skip ? p.stop : st.stop };
+    this.execute(prop, by).catch((e) => this.log(`Order for ${p.symbol} failed: ${e.message}`, 'error'));
+    return `Buying ${p.qty} ${p.symbol}`;
+  }
+
+  expireApprovals() {
+    const { db, clock } = this.ctx;
+    const zone = this.ctx.settings.rules.buyZonePct;
+    for (const ap of db.all("SELECT * FROM approvals WHERE status = 'pending'")) {
+      const p = JSON.parse(ap.data);
+      const ltp = this.ltpOf(p.symbol, p.price);
+      let why = null;
+      if (new Date(ap.expires) < clock.now()) why = 'No answer in time';
+      else if (ltp > p.pivot * (1 + zone / 100)) why = 'Price ran past the buy zone';
+      else if (ltp <= p.stop) why = 'Price fell back to the stop';
+      if (why) {
+        db.run("UPDATE approvals SET status = 'expired', decided_ts = ?, decided_by = 'system' WHERE id = ?", clock.now().toISOString(), ap.id);
+        this.markSignal(ap.signal_id, 'expired', why);
+        this.log(`${p.symbol} approval expired — ${why}. Tracking as a shadow trade.`);
+        if (p.tgMessageId) this.ctx.telegram?.edit(p.tgMessageId, `⌛ Expired (${why}) · <b>${esc(p.symbol)}</b>`);
+        this.openShadow({ symbol: p.symbol, a: { token: p.token, industry: p.industry }, pivot: p.pivot, score: p.score, grade: p.grade, id: ap.signal_id, type: p.type }, p.price, p.stop, why);
+        this.ctx.bus.push('approval', { id: ap.id });
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------ order execution
+  async execute(p, by) {
+    const { db, clock, settings } = this.ctx;
+    const kind = p.kind || this.mode;
+    if (this.busy.has(p.symbol)) return;
+    this.busy.add(p.symbol);
+    try {
+      let fillQty = p.qty;
+      let fillPrice = p.price;
+      let orderId = null;
+      const tick = this.tickOf(p.symbol);
+      if (kind === 'live') {
+        const res = await this.ctx.liveBroker.execute({
+          symbol: p.symbol,
+          side: 'BUY',
+          qty: p.qty,
+          price: p.price,
+          tick,
+          getLtp: () => this.ltpOf(p.symbol),
+          limitCap: p.pivot * (1 + settings.rules.buyZonePct / 100),
+        });
+        db.insert('orders', { ts: clock.now().toISOString(), symbol: p.symbol, side: 'BUY', qty: p.qty, price: p.price, status: res.status, broker_id: res.orderId, filled_qty: res.filledQty, avg_price: res.avgPrice, reason: p.type, mode: kind, message: res.message });
+        if (!res.filledQty) {
+          this.log(`BUY ${p.symbol} not filled (${res.status}${res.message ? ': ' + res.message : ''})`, 'error');
+          this.ctx.notify?.('fills', `⚠️ BUY ${esc(p.symbol)} was not filled — ${esc(res.status)} ${esc(res.message || '')}`);
+          return;
+        }
+        fillQty = res.filledQty;
+        fillPrice = res.avgPrice;
+        orderId = res.orderId;
+      } else {
+        fillPrice = roundTick(Math.max(p.price, this.ltpOf(p.symbol, p.price)) * (1 + settings.rules.slippagePct / 100), tick);
+        db.insert('orders', { ts: clock.now().toISOString(), symbol: p.symbol, side: 'BUY', qty: p.qty, price: p.price, status: 'COMPLETE', filled_qty: p.qty, avg_price: fillPrice, reason: p.type, mode: 'paper' });
+      }
+      const charges = deliveryCharges('BUY', fillQty, fillPrice);
+      const t = ist(clock.now());
+      const posId = db.insert('positions', {
+        kind,
+        symbol: p.symbol,
+        token: p.token,
+        industry: p.industry,
+        status: 'open',
+        entry_ts: clock.now().toISOString(),
+        entry_date: t.date,
+        entry_price: fillPrice,
+        qty_initial: fillQty,
+        qty_open: fillQty,
+        stop: p.stop,
+        initial_stop: p.stop,
+        partial_done: 0,
+        highest: fillPrice,
+        last_price: fillPrice,
+        realized: -charges,
+        charges,
+        signal_id: p.signalId,
+        is_reentry: p.type === 'reentry' ? 1 : 0,
+        score: p.score,
+        grade: p.grade,
+        setup: JSON.stringify({ pivot: p.pivot, stopNote: p.stopNote, volPace: p.volPace, good: p.good, bad: p.bad, parts: p.parts, firstEntryDate: p.firstEntryDate || t.date, approvedBy: by }),
+      });
+      db.insert('fills', { position_id: posId, ts: clock.now().toISOString(), side: 'BUY', qty: fillQty, price: fillPrice, charges, reason: p.type === 'reentry' ? 'Re-entry' : 'Breakout entry', order_id: orderId });
+      if (p.type === 'reentry') db.run("UPDATE watchlist SET status = 'triggered', note = 'Re-entered' WHERE symbol = ?", p.symbol);
+      else db.run("UPDATE watchlist SET status = 'triggered', note = 'Bought on breakout' WHERE symbol = ?", p.symbol);
+      this.log(`✅ Bought ${fillQty} ${p.symbol} @ ${inr(fillPrice)} (${kind}). Stop ${inr(p.stop)}.`, 'success');
+      this.ctx.notify?.('fills', `✅ <b>Bought ${fillQty} ${esc(p.symbol)}</b> @ ${inr(fillPrice)}${kind === 'paper' ? ' <i>[paper]</i>' : ''}\nStop ${inr(p.stop)} · ⅓ target ${inr(roundTick(fillPrice * 1.1, tick))}`);
+      if (kind === 'live' && settings.backupGtt) await this.syncGtt(posId);
+      this.ctx.bus.push('positions', {});
+    } finally {
+      this.busy.delete(p.symbol);
+    }
+  }
+
+  openShadow(sig, entry, stop, reason) {
+    const { db, clock, settings } = this.ctx;
+    if (!sig.a?.token) return;
+    if (db.get("SELECT id FROM positions WHERE kind = 'shadow' AND symbol = ? AND status = 'open'", sig.symbol)) return;
+    const t = ist(clock.now());
+    const equity = settings.paperCapital;
+    const qty = Math.max(1, Math.floor((equity * settings.rules.positionPct) / 100 / entry));
+    const charges = deliveryCharges('BUY', qty, entry);
+    db.insert('positions', {
+      kind: 'shadow',
+      symbol: sig.symbol,
+      token: sig.a.token,
+      industry: sig.a.industry,
+      status: 'open',
+      entry_ts: clock.now().toISOString(),
+      entry_date: t.date,
+      entry_price: entry,
+      qty_initial: qty,
+      qty_open: qty,
+      stop,
+      initial_stop: stop,
+      highest: entry,
+      last_price: entry,
+      realized: -charges,
+      charges,
+      signal_id: sig.id,
+      is_reentry: sig.type === 'reentry' ? 1 : 0,
+      score: sig.score,
+      grade: sig.grade,
+      setup: JSON.stringify({ pivot: sig.pivot, shadowReason: reason }),
+    });
+  }
+
+  // ------------------------------------------------------------------ position management
+  /** Called every second in market hours. */
+  async onTick({ isCloseCheck = false } = {}) {
+    const { db, settings } = this.ctx;
+    const rules = settings.rules;
+    const all = db.all("SELECT * FROM positions WHERE status = 'open'");
+    for (const row of all) {
+      if (this.busy.has(row.id)) continue;
+      const a = this.ctx.analysis?.get(row.symbol);
+      const q = this.ctx.quotes.get(row.token);
+      if (!q?.ltp) continue;
+      const price = q.ltp;
+      const highest = Math.max(row.highest || 0, price);
+      if (highest !== row.highest || price !== row.last_price) db.run('UPDATE positions SET highest = ?, last_price = ? WHERE id = ?', highest, price, row.id);
+      const pos = { entryPrice: row.entry_price, qtyOpen: row.qty_open, qtyInitial: row.qty_initial, stop: row.stop, partialDone: !!row.partial_done, highest };
+      let trailLevel = null;
+      if (isCloseCheck && a) {
+        if (rules.trailMethod === 'ema21' && a.ema21) trailLevel = emaNext(a.ema21, price, 21);
+        else if (rules.trailMethod === 'sma50' && a.sma50) trailLevel = a.sma50;
+      }
+      const actions = managePosition(pos, price, { isCloseCheck, trailLevel }, rules);
+      for (const act of actions) {
+        if (act.type === 'stop') this.track(this.exit(row, act.qty, 'stop', act.reason, price));
+        else if (act.type === 'partial') {
+          this.track(
+            (async () => {
+              const ok = act.qty > 0 ? await this.exit(row, act.qty, 'partial', act.reason, price) : true;
+              if (!ok) return;
+              db.run('UPDATE positions SET partial_done = 1, stop = ? WHERE id = ?', act.newStop, row.id);
+              if (row.kind === 'live' && settings.backupGtt) await this.syncGtt(row.id);
+            })(),
+          );
+        } else if (act.type === 'raiseStop') {
+          db.run('UPDATE positions SET stop = ? WHERE id = ?', act.newStop, row.id);
+          if (row.kind !== 'shadow') this.log(`${row.symbol}: ${act.reason}`);
+          if (row.kind === 'live' && settings.backupGtt) await this.syncGtt(row.id);
+        } else if (act.type === 'trail') this.track(this.exit(row, act.qty, 'trail', act.reason, price));
+      }
+    }
+  }
+
+  /** Run an order task in the background; paper/demo tasks finish synchronously enough. */
+  track(promise) {
+    this.inflight = (this.inflight || 0) + 1;
+    promise
+      .catch((e) => this.log(`Order task failed: ${e.message}`, 'error'))
+      .finally(() => (this.inflight -= 1));
+    return promise;
+  }
+
+  async exit(row, qty, reasonKey, reasonText, price) {
+    const { db, clock, settings } = this.ctx;
+    if (qty <= 0 || this.busy.has(row.id)) return false;
+    if ((this.retryAt.get(row.id) || 0) > Date.now()) return false;
+    this.busy.add(row.id);
+    try {
+      const cur = db.get('SELECT * FROM positions WHERE id = ?', row.id);
+      if (!cur || cur.status !== 'open') return false;
+      qty = Math.min(qty, cur.qty_open);
+      const tick = this.tickOf(cur.symbol);
+      let fillPrice;
+      let orderId = null;
+      if (cur.kind === 'live') {
+        if (cur.gtt_id && qty === cur.qty_open) {
+          await this.ctx.liveBroker.deleteGtt(cur.gtt_id).catch(() => {});
+          db.run('UPDATE positions SET gtt_id = NULL WHERE id = ?', cur.id);
+        }
+        const res = await this.ctx.liveBroker.execute({ symbol: cur.symbol, side: 'SELL', qty, price: price * 0.99, tick, getLtp: () => this.ltpOf(cur.symbol) });
+        db.insert('orders', { ts: clock.now().toISOString(), position_id: cur.id, symbol: cur.symbol, side: 'SELL', qty, price: roundTick(price * 0.99, tick), status: res.status, broker_id: res.orderId, filled_qty: res.filledQty, avg_price: res.avgPrice, reason: reasonKey, mode: 'live', message: res.message });
+        if (!res.filledQty) {
+          const n = (this.failures.get(cur.id) || 0) + 1;
+          this.failures.set(cur.id, n);
+          this.retryAt.set(cur.id, Date.now() + Math.min(300000, 15000 * n));
+          this.log(`SELL ${cur.symbol} failed (${res.status} ${res.message || ''}) — retrying shortly`, 'error');
+          if (n === 1 || n % 5 === 0) this.ctx.notify?.('exits', `⚠️ SELL ${esc(cur.symbol)} failed: ${esc(res.message || res.status)}. Pivot will keep retrying — please check Kite.`);
+          if (n >= 2) await this.reconcile();
+          return false;
+        }
+        this.failures.delete(cur.id);
+        qty = res.filledQty;
+        fillPrice = res.avgPrice;
+        orderId = res.orderId;
+      } else {
+        fillPrice = roundTick(price * (1 - settings.rules.slippagePct / 100), tick);
+        if (cur.kind === 'paper') db.insert('orders', { ts: clock.now().toISOString(), position_id: cur.id, symbol: cur.symbol, side: 'SELL', qty, price: fillPrice, status: 'COMPLETE', filled_qty: qty, avg_price: fillPrice, reason: reasonKey, mode: 'paper' });
+      }
+      const charges = deliveryCharges('SELL', qty, fillPrice);
+      const pnl = qty * (fillPrice - cur.entry_price) - charges;
+      const qtyOpen = cur.qty_open - qty;
+      db.insert('fills', { position_id: cur.id, ts: clock.now().toISOString(), side: 'SELL', qty, price: fillPrice, charges, reason: reasonText, order_id: orderId });
+      const t = ist(clock.now());
+      const upd = { qty_open: qtyOpen, realized: round(cur.realized + pnl), charges: round(cur.charges + charges) };
+      if (qtyOpen <= 0) {
+        const sells = db.all("SELECT qty, price FROM fills WHERE position_id = ? AND side = 'SELL'", cur.id);
+        const avgExit = sells.reduce((s, f) => s + f.qty * f.price, 0) / sells.reduce((s, f) => s + f.qty, 0);
+        Object.assign(upd, { status: 'closed', exit_ts: clock.now().toISOString(), exit_date: t.date, exit_price: round(avgExit), exit_reason: reasonKey });
+      }
+      db.update('positions', cur.id, upd);
+      if (cur.kind !== 'shadow') {
+        const pct = round((fillPrice / cur.entry_price - 1) * 100, 2);
+        const emoji = reasonKey === 'stop' ? (pct < 0 ? '🛑' : '🟡') : reasonKey === 'partial' ? '💰' : '🏁';
+        const label = { stop: 'Stop', partial: 'Partial profit', trail: 'Trailing exit', manual: 'Manual exit', outside: 'Closed outside Pivot' }[reasonKey] || reasonKey;
+        this.log(`${emoji} ${label}: sold ${qty} ${cur.symbol} @ ${inr(fillPrice)} (${pct >= 0 ? '+' : ''}${pct}%) — ${reasonText}`, pct >= 0 ? 'success' : 'warn');
+        this.ctx.notify?.('exits', `${emoji} <b>${label} · ${esc(cur.symbol)}</b>${cur.kind === 'paper' ? ' <i>[paper]</i>' : ''}\nSold ${qty} @ ${inr(fillPrice)} (${pct >= 0 ? '+' : ''}${pct}%) · P&L ${inr(round(pnl, 0))}\n${esc(reasonText)}${qtyOpen > 0 ? `\n${qtyOpen} shares still open` : ''}`);
+        this.ctx.bus.push('positions', {});
+      }
+      if (cur.kind === 'live' && qtyOpen > 0 && settings.backupGtt) await this.syncGtt(cur.id);
+      return true;
+    } catch (e) {
+      this.retryAt.set(row.id, Date.now() + 30000);
+      this.log(`SELL ${row.symbol} error: ${e.message}`, 'error');
+      return false;
+    } finally {
+      this.busy.delete(row.id);
+    }
+  }
+
+  async manualExit(id, fraction = 1) {
+    const row = this.ctx.db.get('SELECT * FROM positions WHERE id = ?', id);
+    if (!row || row.status !== 'open') throw Object.assign(new Error('Position is not open'), { status: 400 });
+    const price = this.ltpOf(row.symbol, row.last_price || row.entry_price);
+    const qty = fraction >= 1 ? row.qty_open : Math.max(1, Math.floor(row.qty_open * fraction));
+    await this.exit(row, qty, 'manual', `You chose to sell ${fraction >= 1 ? 'everything' : Math.round(fraction * 100) + '%'}`, price);
+    return { ok: true };
+  }
+
+  async setStop(id, stop) {
+    const { db } = this.ctx;
+    const row = db.get('SELECT * FROM positions WHERE id = ?', id);
+    if (!row || row.status !== 'open') throw Object.assign(new Error('Position is not open'), { status: 400 });
+    const price = this.ltpOf(row.symbol, row.last_price);
+    if (!(stop > 0) || stop >= price) throw Object.assign(new Error('Stop must be below the current price'), { status: 400 });
+    db.run('UPDATE positions SET stop = ? WHERE id = ?', roundTick(stop, this.tickOf(row.symbol)), id);
+    this.log(`You moved the ${row.symbol} stop to ${inr(stop)}`);
+    if (row.kind === 'live' && this.ctx.settings.backupGtt) await this.syncGtt(id);
+    return { ok: true };
+  }
+
+  async syncGtt(posId) {
+    const { db } = this.ctx;
+    const row = db.get('SELECT * FROM positions WHERE id = ?', posId);
+    if (!row || row.kind !== 'live') return;
+    const tick = this.tickOf(row.symbol);
+    const args = { symbol: row.symbol, qty: row.qty_open, stop: row.stop, ltp: this.ltpOf(row.symbol, row.last_price), tick };
+    try {
+      if (row.status !== 'open' || row.qty_open <= 0) {
+        if (row.gtt_id) await this.ctx.liveBroker.deleteGtt(row.gtt_id);
+        db.run('UPDATE positions SET gtt_id = NULL WHERE id = ?', posId);
+      } else if (row.gtt_id) await this.ctx.liveBroker.modifyStopGtt(row.gtt_id, args);
+      else {
+        const gid = await this.ctx.liveBroker.placeStopGtt(args);
+        db.run('UPDATE positions SET gtt_id = ? WHERE id = ?', gid, posId);
+      }
+    } catch (e) {
+      this.log(`Backup GTT stop for ${row.symbol} could not be updated: ${e.message}. The app's own stop is still active.`, 'warn');
+    }
+  }
+
+  /** LIVE mode: make sure our records match what Zerodha actually holds. */
+  async reconcile() {
+    if (this.mode !== 'live' || !this.ctx.liveBroker) return;
+    let held;
+    try {
+      held = await this.ctx.liveBroker.heldQuantities();
+    } catch (e) {
+      return;
+    }
+    for (const row of this.openPositions('live')) {
+      if (this.busy.has(row.id)) continue;
+      const q = held.get(row.symbol) || 0;
+      if (q < row.qty_open) {
+        const price = this.ltpOf(row.symbol, row.last_price);
+        this.log(`${row.symbol}: Zerodha shows ${q} shares but Pivot expected ${row.qty_open} — recording the difference as sold outside Pivot`, 'warn');
+        const { db, clock } = this.ctx;
+        const qty = row.qty_open - q;
+        const charges = deliveryCharges('SELL', qty, price);
+        db.insert('fills', { position_id: row.id, ts: clock.now().toISOString(), side: 'SELL', qty, price, charges, reason: 'Sold outside Pivot (or backup GTT triggered)' });
+        const upd = { qty_open: q, realized: round(row.realized + qty * (price - row.entry_price) - charges), charges: round(row.charges + charges) };
+        if (q === 0) Object.assign(upd, { status: 'closed', exit_ts: clock.now().toISOString(), exit_date: ist(clock.now()).date, exit_price: price, exit_reason: 'outside' });
+        db.update('positions', row.id, upd);
+      }
+    }
+  }
+
+  async snapshotEquity() {
+    const { db, clock } = this.ctx;
+    const date = ist(clock.now()).date;
+    for (const kind of ['paper', 'live']) {
+      if (kind === 'live' && !this.ctx.liveBroker) continue;
+      const has = db.get('SELECT COUNT(*) AS n FROM positions WHERE kind = ?', kind).n;
+      if (!has && kind !== this.mode) continue;
+      const c = await this.capital(kind);
+      db.run('INSERT OR REPLACE INTO equity(date, kind, equity, cash, invested, open_pnl) VALUES(?,?,?,?,?,?)', date, kind, c.equity, c.cash, c.invested, c.openPnl);
+    }
+  }
+
+  holdDays(row) {
+    return tradingDaysBetween(row.entry_date, row.exit_date || ist(this.now()).date, this.ctx.settings.holidays);
+  }
+
+  rOf(row) {
+    return rMultiple({ entryPrice: row.entry_price, initialStop: row.initial_stop }, row.exit_price ?? row.last_price);
+  }
+}

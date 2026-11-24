@@ -1,0 +1,143 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --bg: 242 242 247;
+  --card: 255 255 255;
+  --card2: 246 246 249;
+  --ink: 28 28 30;
+  --ink2: 99 99 102;
+  --ink3: 142 142 147;
+  --line: 60 60 67;
+  --accent: 94 92 230;
+  --mint: 30 130 60;
+  --mint-soft: 222 245 229;
+  --coral: 200 50 48;
+  --coral-soft: 253 228 227;
+  --lav: 94 92 230;
+  --lav-soft: 236 235 254;
+  --sky: 0 110 170;
+  --sky-soft: 222 239 252;
+  --peach: 178 82 0;
+  --peach-soft: 255 236 219;
+  --butter: 140 104 0;
+  --butter-soft: 255 245 205;
+  --rose: 190 48 118;
+  --rose-soft: 252 229 240;
+  /* chart roles (validated reference palette) */
+  --chart-1: #2a78d6;
+  --chart-gain: #1baf7a;
+  --chart-loss: #e34948;
+  --chart-grid: rgba(60, 60, 67, 0.1);
+  --chart-axis: #8e8e93;
+}
+
+.dark {
+  color-scheme: dark;
+  --bg: 0 0 0;
+  --card: 28 28 30;
+  --card2: 44 44 46;
+  --ink: 245 245 247;
+  --ink2: 174 174 178;
+  --ink3: 118 118 124;
+  --line: 120 120 128;
+  --accent: 130 128 255;
+  --mint: 70 222 120;
+  --mint-soft: 22 58 36;
+  --coral: 255 120 112;
+  --coral-soft: 72 28 28;
+  --lav: 170 168 255;
+  --lav-soft: 44 42 84;
+  --sky: 120 205 255;
+  --sky-soft: 18 50 70;
+  --peach: 255 180 90;
+  --peach-soft: 72 44 18;
+  --butter: 255 215 80;
+  --butter-soft: 64 54 12;
+  --rose: 255 130 190;
+  --rose-soft: 72 26 50;
+  --chart-1: #3987e5;
+  --chart-gain: #199e70;
+  --chart-loss: #e66767;
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --chart-axis: #8e8e93;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  @apply bg-bg text-ink font-sans antialiased;
+  font-size: 18px;
+  line-height: 1.45;
+  font-feature-settings: 'tnum' 1, 'cv11' 1;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.glass {
+  background: rgb(var(--bg) / 0.72);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+.glass-card {
+  background: rgb(var(--card) / 0.78);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+.hairline {
+  border-color: rgb(var(--line) / 0.14);
+}
+.dark .hairline {
+  border-color: rgb(var(--line) / 0.28);
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+  50% { box-shadow: 0 0 0 5px transparent; opacity: 0.75; }
+}
+.pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rise {
+  animation: rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+input[type='number']::-webkit-inner-spin-button { opacity: 0.4; }
+
+:focus-visible {
+  outline: 3px solid rgb(var(--accent) / 0.5);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.hairline > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgb(var(--line) / 0.14);
+}
+.dark .hairline > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgb(var(--line) / 0.28);
+}

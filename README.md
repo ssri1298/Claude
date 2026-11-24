@@ -48,3 +48,9 @@ npm test             # unit tests (parser, planner, SRS, subagents, full day flo
 `scripts/package-release.sh <out-dir>` builds `Scalpel.zip`: prebuilt app + server + double-click start scripts for Windows/Mac/Linux. The end user only needs Node.js 18.17+ installed.
 
 Export/restore a JSON backup from **Settings** (backups from older versions still restore).
+
+---
+
+## Also in this repository: Pivot (VCP trading agents)
+
+`pivot/` is a separate app: autonomous Minervini VCP swing-trading agents for Zerodha Kite. See [pivot/README.md](pivot/README.md) and the setup guide [pivot/GUIDE.md](pivot/GUIDE.md).
