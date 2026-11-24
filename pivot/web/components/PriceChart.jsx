@@ -24,10 +24,12 @@ const LINES = [
   { key: 'sma200', label: '200 DMA', light: '#eb6834', dark: '#d95926', fn: (c) => sma(c, 200) },
 ];
 
-export default function PriceChart({ candles, vcp, positions = [], height = 420 }) {
+export default function PriceChart({ candles, vcp, positions = [], height: heightProp }) {
   const ref = useRef(null);
   const dark = useIsDark();
-  const [range, setRange] = useState(130);
+  const compact = typeof window !== 'undefined' && window.innerWidth < 640;
+  const height = heightProp || (compact ? 330 : 420);
+  const [range, setRange] = useState(compact ? 65 : 130);
   const [hover, setHover] = useState(null);
 
   useEffect(() => {
@@ -41,7 +43,8 @@ export default function PriceChart({ candles, vcp, positions = [], height = 420 
       layout: { background: { color: 'transparent' }, textColor: ink2, fontFamily: '-apple-system, BlinkMacSystemFont, Inter, sans-serif', fontSize: 13, attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: grid } },
       rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.22 } },
-      timeScale: { borderVisible: false, rightOffset: 4, barSpacing: 7 },
+      timeScale: { borderVisible: false, rightOffset: compact ? 2 : 4, barSpacing: 7 },
+      localization: { priceFormatter: (p) => (p >= 1000 ? Math.round(p).toLocaleString('en-IN') : p.toFixed(2)) },
       crosshair: { mode: 0 },
       handleScroll: true,
       handleScale: true,
@@ -72,7 +75,7 @@ export default function PriceChart({ candles, vcp, positions = [], height = 420 
     const dates = new Set(candles.map((c) => c.date));
     const markers = [];
     (vcp?.contractions || []).forEach((k, i) => {
-      if (dates.has(k.highDate)) markers.push({ time: k.highDate, position: 'aboveBar', color: dark ? '#9085e9' : '#6250d6', shape: 'arrowDown', text: `C${i + 1} −${Math.round(k.depthPct)}%` });
+      if (dates.has(k.highDate)) markers.push({ time: k.highDate, position: 'aboveBar', color: dark ? '#9085e9' : '#6250d6', shape: 'arrowDown', text: compact ? `C${i + 1}` : `C${i + 1} −${Math.round(k.depthPct)}%` });
     });
     for (const p of positions) {
       if (dates.has(p.entryDate)) markers.push({ time: p.entryDate, position: 'belowBar', color: gain, shape: 'arrowUp', text: `Buy ${p.entryPrice}` });
@@ -97,13 +100,13 @@ export default function PriceChart({ candles, vcp, positions = [], height = 420 
       ro.disconnect();
       chart.remove();
     };
-  }, [candles, vcp, dark, range, height, positions]);
+  }, [candles, vcp, dark, range, height, positions, compact]);
 
   const last = hover || candles?.[candles.length - 1];
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-ink2">
+        <div className="flex flex-wrap gap-x-3 sm:gap-x-4 gap-y-1 text-[12px] sm:text-[13px] text-ink2">
           {LINES.map((l) => (
             <span key={l.key} className="flex items-center gap-1.5">
               <span className="h-[3px] w-4 rounded-full" style={{ background: dark ? l.dark : l.light }} />
