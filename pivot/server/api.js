@@ -408,6 +408,7 @@ export function mountApi(app, ctx, auth, { dbFile }) {
       w.on('message', (m) => {
         if (m.type === 'progress') {
           job.progress = phaseFrom + (phaseTo - phaseFrom) * m.progress;
+          if (m.phase) job.phase = m.phase;
           ctx.bus.push('backtest', { id: job.id, status: job.status, progress: job.progress, phase: job.phase });
         } else if (m.type === 'done') resolve(m.result);
         else if (m.type === 'error') reject(new Error(m.error));
@@ -477,6 +478,59 @@ export function mountApi(app, ctx, auth, { dbFile }) {
         })
         .finally(() => ctx.bus.push('backtest', { id, status: job.status, progress: job.progress, phase: job.phase }));
       return { id };
+    }),
+  );
+  app.post(
+    '/api/optimize',
+    wrap((req) => {
+      if ([...jobs.values()].some((j) => j.status === 'running')) throw Object.assign(new Error('A backtest or optimisation is already running'), { status: 400 });
+      const id = 'opt-' + Date.now();
+      const params = {
+        from: req.body.from || null,
+        to: req.body.to || null,
+        capital: Number(req.body.capital) || ctx.settings.paperCapital,
+        rules: ctx.settings.rules,
+        marketFilter: ctx.settings.marketFilter,
+        maxDrawdownPct: Math.max(3, Math.min(50, Number(req.body.maxDrawdownPct) || 15)),
+        locked: Array.isArray(req.body.locked) ? req.body.locked : ['positionPct'],
+      };
+      const job = { id, kind: 'optimize', status: 'running', progress: 0, phase: 'analyse', params };
+      jobs.set(id, job);
+      runWorker('optimize', params, job, 0, 1)
+        .then((result) => {
+          job.status = 'done';
+          job.progress = 1;
+          job.result = result;
+          db.kvSet('lastOptimize', job);
+          ctx.bus.log('Analyst', result.keepCurrent ? 'Optimiser finished — your current settings were the most robust' : `Optimiser finished — suggests ${result.changes.length} change${result.changes.length === 1 ? '' : 's'} (tested ${result.tested} combinations)`, { level: 'success' });
+        })
+        .catch((e) => {
+          job.status = 'error';
+          job.error = e.message;
+        })
+        .finally(() => ctx.bus.push('backtest', { id, status: job.status, progress: job.progress }));
+      return { id };
+    }),
+  );
+  app.get(
+    '/api/optimize/:id',
+    wrap((req) => {
+      if (req.params.id === 'last') return db.kvGet('lastOptimize') || null;
+      const j = jobs.get(req.params.id);
+      if (!j) throw Object.assign(new Error('Not found'), { status: 404 });
+      return j;
+    }),
+  );
+  app.post(
+    '/api/optimize/apply',
+    wrap(() => {
+      const last = db.kvGet('lastOptimize');
+      if (!last?.result?.recommended?.patch) throw Object.assign(new Error('Run the optimiser first'), { status: 400 });
+      const patch = last.result.recommended.patch;
+      const settings = ctx.updateSettings(patch);
+      ctx.bus.log('Parent', `You applied the optimiser's recommended settings (${last.result.changes.length} change${last.result.changes.length === 1 ? '' : 's'})`, { level: 'success' });
+      db.kvSet('lastOptimize', { ...last, appliedAt: new Date().toISOString() });
+      return { settings };
     }),
   );
   app.get(

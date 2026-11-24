@@ -3,6 +3,7 @@ import { FlaskConical, Play, Download } from 'lucide-react';
 import { api, useApi, price, pct, signed, tone, niceDate } from '../lib.js';
 import { Card, LargeTitle, Button, NumberField, Segmented, Row, List, Spinner, Empty, GradeBadge, Pill } from '../components/ui.jsx';
 import { StatsBlock } from '../components/Charts.jsx';
+import Optimizer from '../components/Optimizer.jsx';
 
 export default function Backtest() {
   const settings = useApi('/settings');
@@ -32,6 +33,17 @@ export default function Backtest() {
     return () => clearInterval(t);
   }, [job?.id, job?.status]);
 
+  // Run a 15-minute backtest with the optimiser's recommended settings (without saving them)
+  const verify = async (patch) => {
+    setErr('');
+    try {
+      const r = await api('/backtest', { method: 'POST', body: { precision: '15m', marketFilter: patch.marketFilter, rules: patch.rules } });
+      setJob({ id: r.id, status: 'running', progress: 0 });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (e) {
+      setErr(e.message);
+    }
+  };
   const run = async () => {
     setErr('');
     try {
@@ -159,6 +171,7 @@ export default function Backtest() {
       )}
       {job?.status === 'error' && <Card className="p-5 text-coral font-semibold">{job.error}</Card>}
       {result ? <Results r={result} /> : job?.status !== 'running' && <Card><Empty icon={FlaskConical} title="No backtest yet" text="Run one to see how the rules would have performed." /></Card>}
+      <Optimizer onVerify={verify} />
     </div>
   );
 }

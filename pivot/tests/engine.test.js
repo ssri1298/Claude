@@ -226,3 +226,15 @@ test('NSE holiday list: bundled 2026 dates are weekdays and NSE dates parse', as
   assert.equal(parseNseDate('3-Mar-2026'), '2026-03-03');
   assert.equal(parseNseDate('bad'), null);
 });
+
+test('optimiser: walk-forward search keeps locked settings and never recommends something worse than current', async () => {
+  const { optimize } = await import('../server/engine/optimize.js');
+  const m = generateMarket({ seed: 7, stocks: 60, days: 800 });
+  const r = optimize({ stocks: m.stocks, index: m.index, from: m.dates[260], baseRules: DEFAULT_RULES, trials: 30, locked: ['positionPct', 'maxStopPct'] });
+  assert.ok(r.tested > 30);
+  assert.ok(r.periods.train.to < r.periods.test.from, 'test period comes after the tuning period');
+  assert.equal(r.recommended.params.positionPct, DEFAULT_RULES.positionPct, 'locked: position size');
+  assert.equal(r.recommended.params.maxStopPct, DEFAULT_RULES.maxStopPct, 'locked: stop');
+  assert.ok(r.keepCurrent || r.recommended.robust > r.current.robust, 'only recommends a more robust set');
+  assert.equal(r.recommended.patch.rules.maxPositions, Math.round(100 / r.recommended.params.positionPct));
+});

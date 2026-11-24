@@ -14,7 +14,62 @@ import { computeStats } from './stats.js';
 import { round } from './vcp.js';
 import { roundTick } from './indicators.js';
 
-export function runBacktest({ stocks, index, from, to, capital = 500000, rules = DEFAULT_RULES, marketFilter = 'pause', onProgress }) {
+/** Keep only what the simulation needs from a day's analysis (small enough to cache years of it). */
+function compactAnalysis(res) {
+  return {
+    market: { regime: res.market?.regime },
+    stocks: res.stocks
+      .filter((a) => (a.trend?.passCount ?? 0) >= 7)
+      .map((a) => ({
+        symbol: a.symbol,
+        industry: a.industry,
+        avgVol50: a.avgVol50,
+        rsRating: a.rsRating,
+        rsLineHigh: a.rsLineHigh,
+        sectorRs: a.sectorRs,
+        stage: a.stage,
+        trend: { pass: a.trend.pass, passCount: a.trend.passCount, ma200SlopePct: a.trend.ma200SlopePct, above200Pct: a.trend.above200Pct, fromHighPct: a.trend.fromHighPct },
+        vcp: a.vcp?.valid
+          ? {
+              valid: true,
+              pivot: a.vcp.pivot,
+              stop: a.vcp.stop,
+              stopPct: a.vcp.stopPct,
+              distToPivotPct: a.vcp.distToPivotPct,
+              count: a.vcp.count,
+              finalDepthPct: a.vcp.finalDepthPct,
+              higherLows: a.vcp.higherLows,
+              tightnessPct: a.vcp.tightnessPct,
+              shrinkViolations: a.vcp.shrinkViolations,
+              contractions: (a.vcp.contractions || []).map((k) => ({ depthPct: k.depthPct })),
+              lastVolRatio: a.vcp.lastVolRatio,
+              dryUpDays: a.vcp.dryUpDays,
+              upDownVol: a.vcp.upDownVol,
+              depthPct: a.vcp.depthPct,
+              baseBars: a.vcp.baseBars,
+              priorAdvancePct: a.vcp.priorAdvancePct,
+            }
+          : { valid: false },
+      })),
+  };
+}
+
+/**
+ * The slow part of a backtest — analysing every stock on every day — done once.
+ * Many parameter sets can then be simulated quickly on the result (used by the optimiser).
+ */
+export function precomputeAnalyses({ stocks, index, from, to, onProgress }) {
+  const prepared = prepareUniverse(stocks);
+  const dates = index.map((c) => c.date).filter((d) => (!from || d >= from) && (!to || d <= to));
+  const analyses = new Map();
+  dates.forEach((d, di) => {
+    analyses.set(d, compactAnalysis(analyzeUniverse(prepared, { indexCandles: index, date: d })));
+    if (onProgress && di % 20 === 0) onProgress(di / dates.length);
+  });
+  return { prepared, analyses, dates };
+}
+
+export function runBacktest({ stocks, index, from, to, capital = 500000, rules = DEFAULT_RULES, marketFilter = 'pause', onProgress, pre }) {
   const R = {
     ...DEFAULT_RULES,
     ...rules,
@@ -23,9 +78,9 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
     twoStage: { ...DEFAULT_RULES.twoStage, ...(rules?.twoStage || {}) },
     failedExit: { ...DEFAULT_RULES.failedExit, ...(rules?.failedExit || {}) },
   };
-  const prepared = prepareUniverse(stocks);
+  const prepared = pre ? pre.prepared : prepareUniverse(stocks);
   const bySym = new Map(prepared.map((s) => [s.symbol, s]));
-  const dates = index.map((c) => c.date).filter((d) => (!from || d >= from) && (!to || d <= to));
+  const dates = (pre ? pre.dates : index.map((c) => c.date)).filter((d) => (!from || d >= from) && (!to || d <= to));
   let cash = capital;
   const open = [];
   const closed = [];
@@ -245,7 +300,7 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
     }, 0);
     equity.push({ date: d, equity: round(cash + invested, 0), cash: round(cash, 0), invested: round(invested, 0), positions: open.length });
 
-    prevAnalysis = analyzeUniverse(prepared, { indexCandles: index, date: d });
+    prevAnalysis = pre ? pre.analyses.get(d) : analyzeUniverse(prepared, { indexCandles: index, date: d });
     if (onProgress && di % 20 === 0) onProgress(di / dates.length);
   }
 

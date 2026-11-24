@@ -6,6 +6,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { openDb } from '../core/db.js';
 import { runBacktest } from './backtest.js';
 import { findBreakoutDays, runBacktest15 } from './backtest15.js';
+import { optimize } from './optimize.js';
 
 const { dbFile, params, indexToken, mode = 'daily' } = workerData;
 try {
@@ -25,7 +26,20 @@ try {
   const common = { stocks, index, from, to: params.to, capital: params.capital, rules: params.rules, marketFilter: params.marketFilter, onProgress: progress };
 
   let result;
-  if (mode === 'scan') result = findBreakoutDays(common);
+  if (mode === 'optimize')
+    result = optimize({
+      stocks,
+      index,
+      from,
+      to: params.to,
+      capital: params.capital,
+      baseRules: params.rules,
+      baseMarketFilter: params.marketFilter,
+      maxDrawdownPct: params.maxDrawdownPct,
+      locked: params.locked,
+      onProgress: (p) => parentPort.postMessage({ type: 'progress', progress: p.progress, phase: p.phase }),
+    });
+  else if (mode === 'scan') result = findBreakoutDays(common);
   else if (mode === 'run15') {
     const stmt = db.raw.prepare('SELECT time, open, high, low, close, volume FROM candles15 WHERE token = ? AND date = ? ORDER BY time');
     result = runBacktest15({ ...common, getBars: (token, date) => stmt.all(token, date).map((r) => ({ ...r })) });
