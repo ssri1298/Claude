@@ -9,7 +9,6 @@ import { rMultiple } from './engine/rules.js';
 import { round } from './engine/vcp.js';
 import { NIFTY50_TOKEN, parseNifty500Csv } from './broker/feeds.js';
 import { indexSnapshot, stockSnapshot } from './core/quotes.js';
-import { CHECK_LABELS } from './engine/confirm.js';
 
 const wrap = (fn) => async (req, res) => {
   try {
@@ -173,36 +172,6 @@ export function mountApi(app, ctx, auth, { dbFile }) {
         watch: db.get('SELECT * FROM watchlist WHERE symbol = ?', sym) || null,
         positions: positionsView(ctx, db.all("SELECT * FROM positions WHERE symbol = ? AND kind != 'shadow' ORDER BY entry_ts DESC", sym)),
         signals: db.all('SELECT * FROM signals WHERE symbol = ? ORDER BY id DESC LIMIT 20', sym),
-      };
-    }),
-  );
-
-  // ---------------------------------------------------------- breakout-check measurement
-  app.get(
-    '/api/checks-stats',
-    wrap(() => {
-      const rows = db.all("SELECT * FROM positions WHERE kind = 'probe'");
-      const closed = rows.filter((r) => r.status === 'closed');
-      const res = (list) => {
-        const n = list.length;
-        const wins = list.filter((r) => r.realized > 0).length;
-        const avg = n ? list.reduce((s, r) => s + (r.realized / (r.entry_price * r.qty_initial)) * 100, 0) / n : 0;
-        return { n, winRate: n ? round((wins / n) * 100, 1) : null, avgPct: n ? round(avg, 2) : null };
-      };
-      const parsed = closed.map((r) => ({ r, s: JSON.parse(r.setup || '{}') }));
-      const keys = ['buffer', 'holdCandle', 'vwap', 'rangePos', 'gap', 'volume'];
-      const byCheck = keys.map((k) => ({
-        key: k,
-        label: CHECK_LABELS[k],
-        passed: res(parsed.filter((x) => x.s.checks?.[k] === true).map((x) => x.r)),
-        failed: res(parsed.filter((x) => x.s.checks?.[k] === false).map((x) => x.r)),
-      }));
-      return {
-        all: res(closed),
-        confirmed: res(parsed.filter((x) => x.s.confirmed).map((x) => x.r)),
-        notConfirmed: res(parsed.filter((x) => !x.s.confirmed).map((x) => x.r)),
-        open: rows.length - closed.length,
-        byCheck,
       };
     }),
   );
@@ -572,9 +541,6 @@ function positionsView(ctx, rows, withFills = false) {
       gtt: !!r.gtt_id,
       pivot: setup.pivot,
       shadowReason: setup.shadowReason,
-      stage: setup.stage || 0,
-      plannedAdd: setup.plannedAdd || 0,
-      addTime: setup.addTime,
       value: round(r.qty_open * ltp),
     };
     if (withFills) out.fills = ctx.db.all('SELECT ts, side, qty, price, charges, reason FROM fills WHERE position_id = ? ORDER BY id', r.id);
@@ -598,7 +564,7 @@ function tradeView(ctx, r) {
     initialStop: r.initial_stop,
     realized: r.realized,
     charges: r.charges,
-    exitReason: { stop: r.partial_done ? 'Breakeven stop' : 'Stop-loss', trail: 'Trailing exit', manual: 'Manual', outside: 'Outside Pivot', partial: 'Partial', failed: 'Failed breakout' }[r.exit_reason] || r.exit_reason,
+    exitReason: { stop: r.partial_done ? 'Breakeven stop' : 'Stop-loss', trail: 'Trailing exit', manual: 'Manual', outside: 'Outside Pivot', partial: 'Partial' }[r.exit_reason] || r.exit_reason,
     grade: r.grade,
     isReentry: !!r.is_reentry,
     holdDays: tradingDaysBetween(r.entry_date, r.exit_date, ctx.settings.holidays),

@@ -287,21 +287,10 @@ function ApprovalCard({ a, now, onDone }) {
         </Pill>
       </div>
       <div className="grid grid-cols-1 min-[440px]:grid-cols-3 gap-2 sm:gap-3 mt-5">
-        <Mini label={a.plannedAdd ? 'Buy now' : 'Buy'} value={`${a.qty} × ${price(a.ltp)}`} sub={a.plannedAdd ? `+${a.plannedAdd} more at ${a.addTime} if it holds` : `${inr(a.qty * a.ltp)} · ${a.pctOfCapital}%`} />
+        <Mini label="Buy" value={`${a.qty} × ${price(a.ltp)}`} sub={`${inr(a.qty * a.ltp)} · ${a.pctOfCapital}%`} />
         <Mini label="Stop-loss" value={price(a.stop)} sub={`−${a.stopPct}% · risk ${inr(a.riskAmount)}`} tone="text-coral" />
         <Mini label="Sell ⅓ at" value={price(a.target)} sub="+10%, then breakeven" tone="text-mint" />
       </div>
-      {a.checks && (
-        <div className="flex flex-wrap gap-1.5 mt-4">
-          {Object.entries(a.checks)
-            .filter(([, v]) => v === true)
-            .map(([k]) => (
-              <Pill key={k} tone="mint">
-                ✓ {CHECK_SHORT[k] || k}
-              </Pill>
-            ))}
-        </div>
-      )}
       <ul className="mt-4 space-y-1.5 text-[15px]">
         {(a.good || []).slice(0, 3).map((g) => (
           <li key={g} className="flex gap-2">
@@ -332,8 +321,6 @@ function ApprovalCard({ a, now, onDone }) {
   );
 }
 
-const CHECK_SHORT = { buffer: 'Cleared pivot', holdCandle: '15-min close above', vwap: 'Above VWAP', rangePos: 'Strong in range', gap: 'Beat 30-min high', volume: 'Volume' };
-
 function Mini({ label, value, sub, tone = '' }) {
   return (
     <div className="bg-card2 rounded-2xl p-3 min-w-0 flex min-[440px]:block items-baseline justify-between gap-3">
@@ -357,7 +344,6 @@ export function PositionCard({ p: base, actions }) {
             <span className="text-[21px] font-bold tracking-tight">{p.symbol}</span>
             {p.grade && <GradeBadge grade={p.grade} />}
             {p.isReentry && <Pill tone="sky">Re-entry</Pill>}
-            {p.stage === 1 && <Pill tone="butter">+{p.plannedAdd} at {p.addTime || '15:15'} if it holds</Pill>}
           </div>
           <div className="text-ink2 text-[15px] num">
             {p.qtyOpen} sh · bought {price(p.entryPrice)} · {p.holdDays}d

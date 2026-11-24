@@ -25,8 +25,6 @@ export default function Settings({ query }) {
     }
   };
   const rule = (k) => (v) => save({ rules: { [k]: v } });
-  const c = r.confirm;
-  const conf = (patch) => save({ rules: { confirm: patch } });
 
   return (
     <div className="space-y-7 pb-10">
@@ -85,26 +83,6 @@ export default function Settings({ query }) {
         <Row title="In a market correction">
           <Segmented size="sm" className="mt-2" value={s.marketFilter} onChange={(v) => save({ marketFilter: v })} options={[{ value: 'pause', label: 'Pause new buys' }, { value: 'half', label: 'Half size' }, { value: 'off', label: 'Ignore' }]} />
         </Row>
-      </Group>
-
-      <Group title="Breakout confirmation" footer="The first tick above the pivot only 'arms' a stock. Pivot buys once these checks pass. Every breakout is also tracked from its first tick, so the Dashboard can show which checks really help.">
-        <Row icon={ShieldCheck} iconTone="lav" title="Confirm breakouts" subtitle="Off = buy on the first tick above the pivot" right={<Toggle checked={c.enabled} onChange={(v) => conf({ enabled: v })} />} />
-        {c.enabled && (
-          <>
-            <Row title="15-min candle closes above the pivot" subtitle="Filters quick pokes that fail" right={<Toggle checked={c.holdCandle} onChange={(v) => conf({ holdCandle: v })} />} />
-            <Row title="Price above VWAP" subtitle="Today's average traded price" right={<Toggle checked={c.vwap} onChange={(v) => conf({ vwap: v })} />} />
-            <Row title="Top third of today's range" subtitle="No long upper wick" right={<Toggle checked={c.rangePos} onChange={(v) => conf({ rangePos: v })} />} />
-            <Row title="Gap-up rule" subtitle="Opened above the pivot → wait for the 30-min high to break" right={<Toggle checked={c.gapRule} onChange={(v) => conf({ gapRule: v })} />} />
-            <Row title="Clear the pivot by" right={<NumberField value={c.pivotBufferPct} onChange={(v) => conf({ pivotBufferPct: v })} suffix="%" step={0.1} width="w-20" />} />
-          </>
-        )}
-      </Group>
-
-      <Group title="Two-stage buy & failed breakouts" footer="Half the position is bought at the confirmed breakout; the other half at 3:15 pm only if it is still above the pivot with good volume. A new buy that closes back below its pivot is sold at the close (usually a 1–3% loss instead of the full stop).">
-        <Row icon={Zap} iconTone="butter" title="Two-stage buy" right={<Toggle checked={r.twoStage.enabled} onChange={(v) => save({ rules: { twoStage: { enabled: v } } })} />} />
-        {r.twoStage.enabled && <Row title="First part" right={<NumberField value={Math.round(r.twoStage.firstFraction * 100)} onChange={(v) => save({ rules: { twoStage: { firstFraction: Math.min(0.9, Math.max(0.1, v / 100)) } } })} suffix="%" width="w-20" />} />}
-        <Row title="Sell failed breakouts early" subtitle="Close back below the pivot" right={<Toggle checked={r.failedExit.enabled} onChange={(v) => save({ rules: { failedExit: { enabled: v } } })} />} />
-        {r.failedExit.enabled && <Row title="Within the first" right={<NumberField value={r.failedExit.days} onChange={(v) => save({ rules: { failedExit: { days: v } } })} suffix="days" width="w-20" />} />}
       </Group>
 
       <Group title="Re-entry" footer="If a stock stops you out but reclaims its pivot on strong volume within the window, Pivot proposes buying it again.">

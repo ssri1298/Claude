@@ -8,12 +8,11 @@ const SCHEDULE = [
   ['08:00', 'Parent', 'Checks the Zerodha login — sends you a one-tap login link on Telegram if needed', Crown],
   ['08:30', 'Screener', 'Downloads Nifty 500 daily data, ranks relative strength, checks the trend template, finds VCP bases and pivots', Radar],
   ['08:35', 'Parent', 'Morning brief to Telegram: market health and the best setups', Crown],
-  ['09:15 – 15:30', 'Screener', 'Every minute: all 500 live prices vs. pivots. A cross only arms a stock; the breakout is confirmed by a 15-min close above the pivot, VWAP, strong range position and volume', Radar],
+  ['09:15 – 15:30', 'Screener', 'Every minute: all 500 live prices vs. pivots; breakout = above pivot, within 5%, volume pace ≥ 1.5×', Radar],
   ['on breakout', 'Analyst', 'Rates the setup 0–100, applies the market filter and minimum score, ranks the best first', Sparkles],
   ['on breakout', 'Executor', 'Sizes the trade (10% of capital), sets the stop (max 6%), asks for your approval, buys, places a backup GTT', ShieldCheck],
   ['every second', 'Executor', 'Stop-loss · sell ⅓ at +10% · stop to breakeven · re-entry watch', ShieldCheck],
-  ['15:15', 'Executor', 'Two-stage buy: adds the second half of today’s new positions if the breakout held', ShieldCheck],
-  ['15:20', 'Executor', 'Close check: failed breakouts (back below the pivot) are sold; trailing exit below the 21-day EMA', ShieldCheck],
+  ['15:20', 'Executor', 'Trailing check: exits the rest if the stock closes below its 21-day EMA', ShieldCheck],
   ['15:40', 'Parent', 'Fresh analysis for tomorrow, equity snapshot, evening report', Crown],
 ];
 const TONE = { Parent: 'bg-lav-soft text-lav', Screener: 'bg-sky-soft text-sky', Analyst: 'bg-peach-soft text-peach', Executor: 'bg-mint-soft text-mint' };

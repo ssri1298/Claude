@@ -35,7 +35,7 @@ export class Parent {
   }
 
   newDay(date) {
-    this.ctx.day = { date, jobs: {}, armed: new Map(), falseAlarm: new Set(), signaled: new Set(), failed: new Set(), extended: new Set(), lowVolLogged: new Set(), nearNotified: new Set(), ticksSeen: false };
+    this.ctx.day = { date, jobs: {}, signaled: new Set(), failed: new Set(), extended: new Set(), lowVolLogged: new Set(), nearNotified: new Set(), ticksSeen: false };
   }
 
   isTradingDate(date) {
@@ -121,13 +121,6 @@ export class Parent {
         this.log('Close check — evaluating trailing exits (close below 21-day EMA)');
       }
       await this.executor.onTick({ isCloseCheck });
-
-      // Two-stage buy: add the second part of new positions whose breakout held
-      const addAt = settings.rules.twoStage?.addTime || '15:15';
-      if (settings.rules.twoStage?.enabled !== false && at(addAt) && !day.jobs.stage2) {
-        day.jobs.stage2 = true;
-        this.executor.stageTwo().catch((e) => this.log(`Second-part buying failed: ${e.message}`, 'error'));
-      }
 
       // minute scan
       const minuteKey = `${t.date} ${t.minutes}`;
