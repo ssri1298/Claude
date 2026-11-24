@@ -96,6 +96,7 @@ export class Screener {
         return;
       }
       this.analyse(until);
+      this.backfillScores().catch(() => {});
       this.status.lastPrep = this.ctx.clock.now().toISOString();
       this.status.progress = null;
       const c = this.status.counts;
@@ -149,6 +150,57 @@ export class Screener {
     }
   }
 
+  /** One row per stock per day: the score and its parts, for the score-history charts. */
+  saveScores(stocks, date) {
+    const { db } = this.ctx;
+    for (const a of stocks)
+      db.run(
+        'INSERT OR REPLACE INTO score_history(symbol,date,score,grade,stage,rs,close,pivot,trend_pass,parts) VALUES(?,?,?,?,?,?,?,?,?,?)',
+        a.symbol,
+        date,
+        a.score,
+        a.grade,
+        a.stage,
+        a.rsRating,
+        a.close,
+        a.vcp?.valid ? a.vcp.pivot : null,
+        a.trend?.passCount ?? null,
+        JSON.stringify(Object.fromEntries((a.scoreParts || []).map((p) => [p.key, p.points]))),
+      );
+  }
+
+  /**
+   * Fill in past days' scores (once) from stored candles, so the charts have history from day one.
+   * Runs a day at a time in the background so it never blocks the agents.
+   */
+  async backfillScores(days = 90) {
+    const { db, feed } = this.ctx;
+    if (this.backfilling) return;
+    this.backfilling = true;
+    try {
+      const idxToken = feed.kind === 'demo' ? 256265 : NIFTY50_TOKEN;
+      const until = this.dataUntil();
+      const dates = db.all('SELECT date FROM candles WHERE token = ? AND date <= ? ORDER BY date DESC LIMIT ?', idxToken, until, days).map((r) => r.date).reverse();
+      const have = new Set(db.all('SELECT DISTINCT date FROM score_history WHERE date >= ?', dates[0] || until).map((r) => r.date));
+      const missing = dates.filter((d) => !have.has(d));
+      if (!missing.length) return;
+      const uni = db.all('SELECT * FROM universe WHERE active = 1');
+      const load = (token) => db.all('SELECT date,open,high,low,close,volume FROM candles WHERE token = ? AND date <= ? ORDER BY date DESC LIMIT ?', token, until, HISTORY_BARS + days).reverse();
+      const prepared = prepareUniverse(uni.map((u) => ({ ...u, candles: load(u.token) })));
+      const indexCandles = load(idxToken);
+      for (const d of missing) {
+        const res = analyzeUniverse(prepared, { indexCandles: indexCandles.length > 210 ? indexCandles : null, date: d });
+        db.tx(() => this.saveScores(res.stocks, d));
+        await new Promise((r) => setImmediate(r));
+      }
+      this.log(`Score history ready — filled in ${missing.length} past trading days`);
+    } catch (e) {
+      this.log(`Could not fill in score history: ${e.message}`, 'warn');
+    } finally {
+      this.backfilling = false;
+    }
+  }
+
   /** Run the full analysis on stored candles (fast, no network). */
   analyse(until = this.dataUntil()) {
     const { db } = this.ctx;
@@ -174,6 +226,7 @@ export class Screener {
     db.tx(() => {
       db.run('DELETE FROM analysis');
       for (const a of res.stocks) db.run('INSERT INTO analysis(symbol, as_of, score, stage, data) VALUES(?,?,?,?,?)', a.symbol, a.asOf, a.score, a.stage, JSON.stringify(a));
+      this.saveScores(res.stocks, until);
       db.run(
         'INSERT OR REPLACE INTO screen_runs(date,total,trend_pass,setups,near,regime,data) VALUES(?,?,?,?,?,?,?)',
         until,

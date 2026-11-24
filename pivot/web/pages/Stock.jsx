@@ -3,6 +3,7 @@ import { useApi, price, pct, istDateTime, niceDate } from '../lib.js';
 import { Card, Section, Pill, GradeBadge, Spinner, Empty, ScoreRing, StageBadge, Delta, LivePrice } from '../components/ui.jsx';
 import PriceChart from '../components/PriceChart.jsx';
 import { PositionCard } from './Today.jsx';
+import ScoreHistory from '../components/ScoreHistory.jsx';
 
 export default function Stock({ symbol }) {
   const { data, error } = useApi(`/stock/${symbol}`, { interval: 20000, events: ['positions'] });
@@ -155,6 +156,8 @@ export default function Stock({ symbol }) {
           </Card>
         </Section>
       )}
+
+      <ScoreHistory symbol={symbol} />
 
       {data.watch && (
         <p className="text-ink2 text-[15px] px-1">

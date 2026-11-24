@@ -165,7 +165,10 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
 
   // Restore yesterday's analysis instantly from stored candles (UI has data before the morning run)
   try {
-    if (db.get('SELECT COUNT(*) AS n FROM candles').n > 1000) parent.screener.analyse();
+    if (db.get('SELECT COUNT(*) AS n FROM candles').n > 1000) {
+      parent.screener.analyse();
+      if (autostart) setTimeout(() => parent.screener.backfillScores().catch(() => {}), 5000);
+    }
   } catch (e) {
     console.error('restore analysis failed', e);
   }

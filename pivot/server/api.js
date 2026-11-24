@@ -236,6 +236,17 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
     '/api/quotes',
     wrap(() => ({ t: Date.now(), index: indexSnapshot(ctx), q: stockSnapshot(ctx), phase: ctx.parent.phase, demo: ctx.demo })),
   );
+  app.get(
+    '/api/stock/:symbol/scores',
+    wrap((req) => {
+      const days = Math.min(400, Number(req.query.days) || 90);
+      const rows = db
+        .all('SELECT date, score, grade, stage, rs, close, pivot, trend_pass, parts FROM score_history WHERE symbol = ? ORDER BY date DESC LIMIT ?', req.params.symbol.toUpperCase(), days)
+        .reverse()
+        .map((r) => ({ ...r, parts: JSON.parse(r.parts || '{}') }));
+      return { minScore: ctx.settings.rules.minScore, rows };
+    }),
+  );
   app.get('/api/watchlist', wrap(() => db.all('SELECT * FROM watchlist ORDER BY CASE status WHEN \'watching\' THEN 0 WHEN \'triggered\' THEN 1 ELSE 2 END, score DESC LIMIT 300')));
   app.get('/api/signals', wrap((req) => db.all('SELECT * FROM signals ORDER BY id DESC LIMIT ?', Math.min(500, Number(req.query.limit) || 100))));
   app.get(

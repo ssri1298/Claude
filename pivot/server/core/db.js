@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS watchlist (
   score REAL, best_score REAL, days_watched INTEGER DEFAULT 0, note TEXT, data TEXT
 );
 
+CREATE TABLE IF NOT EXISTS score_history (
+  symbol TEXT, date TEXT, score REAL, grade TEXT, stage TEXT, rs INTEGER, close REAL, pivot REAL, trend_pass INTEGER, parts TEXT,
+  PRIMARY KEY (symbol, date)
+);
+
 CREATE TABLE IF NOT EXISTS screen_runs (
   date TEXT PRIMARY KEY, total INTEGER, trend_pass INTEGER, setups INTEGER, near INTEGER, regime TEXT, data TEXT
 );
