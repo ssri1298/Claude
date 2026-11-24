@@ -9,6 +9,7 @@ import { runBacktest } from '../server/engine/backtest.js';
 import { generateMarket } from '../server/demo/synth.js';
 import { tradingDates } from '../server/demo/synth.js';
 import { scoreSetup } from '../server/engine/scoring.js';
+import { evaluateChecks, DEFAULT_CONFIRM } from '../server/engine/confirm.js';
 
 test('sma / ema', () => {
   assert.deepEqual(sma([1, 2, 3, 4], 2), [null, 1.5, 2.5, 3.5]);
@@ -165,4 +166,19 @@ test('backtest runs end-to-end on a synthetic market', () => {
     assert.ok(t.rMultiple > -1.6, `loss limited by the stop (got ${t.rMultiple}R)`);
     assert.ok(t.qtyInitial * t.entryPrice <= 500000 * 0.11 * (1 + r.stats.totalReturnPct / 100) + 1000, 'position ≈ 10% of capital');
   }
+});
+
+test('confirmation checks: VWAP, range position, gap rule, candle hold', () => {
+  const base = { ltp: 101, pivot: 100, dayOpen: 99, dayHigh: 101.5, dayLow: 98, vwap: 100, orHigh: 100.2, lastBar: { c: 100.8, bucket: 3 }, armedBucket: 3, minutes: 60, volPace: 2 };
+  assert.equal(evaluateChecks(base).confirmed, true);
+  assert.equal(evaluateChecks({ ...base, vwap: 101.5 }).checks.vwap, false);
+  assert.equal(evaluateChecks({ ...base, dayHigh: 106 }).checks.rangePos, false, 'long upper wick');
+  assert.equal(evaluateChecks({ ...base, lastBar: { c: 99.9, bucket: 3 } }).checks.holdCandle, false);
+  assert.equal(evaluateChecks({ ...base, lastBar: { c: 100.8, bucket: 2 } }).checks.holdCandle, false, 'candle must be after the cross');
+  assert.equal(evaluateChecks({ ...base, ltp: 100.1 }).checks.buffer, false, 'must clear the pivot by 0.3%');
+  // gapped above the pivot: needs the 30-minute high
+  assert.equal(evaluateChecks({ ...base, dayOpen: 100.5, orHigh: 101.3 }).checks.gap, false);
+  assert.equal(evaluateChecks({ ...base, dayOpen: 100.5, orHigh: 100.9 }).checks.gap, true);
+  assert.equal(evaluateChecks({ ...base, dayOpen: 100.5, minutes: 20 }).checks.gap, false);
+  assert.equal(evaluateChecks(base, { ...DEFAULT_CONFIRM, vwap: false }).checks.vwap, null);
 });

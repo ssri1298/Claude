@@ -8,8 +8,10 @@
 import { computeStop, positionSize, capacityCheck, managePosition, deliveryCharges, rMultiple } from '../engine/rules.js';
 import { emaNext, roundTick } from '../engine/indicators.js';
 import { round } from '../engine/vcp.js';
-import { ist, tradingDaysBetween } from '../core/time.js';
+import { ist, tradingDaysBetween, MARKET } from '../core/time.js';
+import { volumePace } from '../engine/market.js';
 import { esc } from '../notify/telegram.js';
+import { describeChecks } from '../engine/confirm.js';
 
 const NAME = 'Executor';
 const inr = (x) => '₹' + Number(x).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -114,13 +116,24 @@ export class Executor {
       return;
     }
 
+    // Two-stage buy: part now, the rest at 15:15 only if the breakout holds
+    const ts = rules.twoStage || {};
+    const fullQty = size.qty;
+    const firstQty = ts.enabled && fullQty >= 2 ? Math.max(1, Math.floor(fullQty * (ts.firstFraction || 0.5))) : fullQty;
+    const plannedAdd = fullQty - firstQty;
+    size.qty = firstQty;
+
     const proposal = {
       signalId: sig.id,
       type: sig.type,
       symbol: sig.symbol,
       token: sig.a.token,
       industry: sig.a.industry,
-      qty: size.qty,
+      qty: firstQty,
+      fullQty,
+      plannedAdd,
+      addTime: ts.addTime || '15:15',
+      checks: sig.checks || null,
       price: entry,
       pivot: sig.pivot,
       stop: stopRes.stop,
@@ -128,8 +141,8 @@ export class Executor {
       stopNote: stopRes.note,
       value: round(size.qty * entry),
       pctOfCapital: round(((size.qty * entry) / capital.equity) * 100, 1),
-      riskAmount: round(size.qty * (entry - stopRes.stop)),
-      riskPct: round(((size.qty * (entry - stopRes.stop)) / capital.equity) * 100, 2),
+      riskAmount: round(fullQty * (entry - stopRes.stop)),
+      riskPct: round(((fullQty * (entry - stopRes.stop)) / capital.equity) * 100, 2),
       target: roundTick(entry * (1 + rules.partialAtPct / 100), tick),
       score: sig.score,
       grade: sig.grade,
@@ -178,9 +191,12 @@ export class Executor {
       `${p.type === 'reentry' ? '🔁 <b>RE-ENTRY</b>' : '🟢 <b>BUY SIGNAL</b>'} · <b>${esc(p.symbol)}</b>  ${p.grade} (${p.score}/100)${p.kind === 'paper' ? '  <i>[paper]</i>' : ''}`,
       `Breakout above ${inr(p.pivot)} on ${p.volPace}× volume`,
       '',
-      `Buy <b>${p.qty}</b> @ ~${inr(p.price)} = <b>${inr(p.value)}</b> (${p.pctOfCapital}% of capital)`,
+      p.plannedAdd
+        ? `Buy <b>${p.qty}</b> now @ ~${inr(p.price)} (${inr(p.value)}) + <b>${p.plannedAdd}</b> more at ${p.addTime} if the breakout holds`
+        : `Buy <b>${p.qty}</b> @ ~${inr(p.price)} = <b>${inr(p.value)}</b> (${p.pctOfCapital}% of capital)`,
       `Stop ${inr(p.stop)} (−${p.stopPct}%) · risk ${inr(p.riskAmount)} (${p.riskPct}%)`,
       `Sell ⅓ at ${inr(p.target)} (+10%), then stop → breakeven`,
+      ...(p.checks ? ['', 'Confirmed: ' + describeChecks(p.checks).filter((x) => x.startsWith('✓')).map((x) => x.slice(2)).join(' · ')] : []),
       '',
       ...(p.good || []).slice(0, 4).map((g) => `✓ ${esc(g)}`),
       ...(p.bad || []).slice(0, 2).map((b) => `⚠︎ ${esc(b)}`),
@@ -322,7 +338,7 @@ export class Executor {
         is_reentry: p.type === 'reentry' ? 1 : 0,
         score: p.score,
         grade: p.grade,
-        setup: JSON.stringify({ pivot: p.pivot, stopNote: p.stopNote, volPace: p.volPace, good: p.good, bad: p.bad, parts: p.parts, firstEntryDate: p.firstEntryDate || t.date, approvedBy: by }),
+        setup: JSON.stringify({ pivot: p.pivot, stopNote: p.stopNote, volPace: p.volPace, good: p.good, bad: p.bad, parts: p.parts, firstEntryDate: p.firstEntryDate || t.date, approvedBy: by, checks: p.checks || null, stage: p.plannedAdd ? 1 : 0, plannedAdd: p.plannedAdd || 0, addTime: p.addTime }),
       });
       db.insert('fills', { position_id: posId, ts: clock.now().toISOString(), side: 'BUY', qty: fillQty, price: fillPrice, charges, reason: p.type === 'reentry' ? 'Re-entry' : 'Breakout entry', order_id: orderId });
       if (p.type === 'reentry') db.run("UPDATE watchlist SET status = 'triggered', note = 'Re-entered' WHERE symbol = ?", p.symbol);
@@ -369,6 +385,120 @@ export class Executor {
     });
   }
 
+  // ------------------------------------------------------------------ probes (measuring confirmation)
+  /** Tracking-only position bought at the FIRST tick above the pivot, to measure each check. */
+  openProbe(a, price, pivot, chartStop) {
+    const { db, clock, settings } = this.ctx;
+    const t = ist(clock.now());
+    // one probe per setup (same pivot), not one per day
+    if (db.get("SELECT id FROM positions WHERE kind = 'probe' AND symbol = ? AND (entry_date = ? OR ABS(json_extract(setup, '$.pivot') - ?) < 0.01)", a.symbol, t.date, pivot)) return;
+    const rules = settings.rules;
+    let st = computeStop(price, chartStop, rules);
+    if (st.skip) st = computeStop(price, chartStop, { ...rules, wideStopAction: 'cap' });
+    const qty = Math.max(1, Math.floor((settings.paperCapital * rules.positionPct) / 100 / price));
+    const charges = deliveryCharges('BUY', qty, price);
+    db.insert('positions', {
+      kind: 'probe',
+      symbol: a.symbol,
+      token: a.token,
+      industry: a.industry,
+      status: 'open',
+      entry_ts: clock.now().toISOString(),
+      entry_date: t.date,
+      entry_price: price,
+      qty_initial: qty,
+      qty_open: qty,
+      stop: st.stop,
+      initial_stop: st.stop,
+      highest: price,
+      last_price: price,
+      realized: -charges,
+      charges,
+      score: a.score,
+      grade: a.grade,
+      setup: JSON.stringify({ pivot, probe: true, checks: null, confirmed: false }),
+    });
+  }
+
+  /** Keep the probe's latest check results until the breakout is confirmed (then freeze them). */
+  recordProbeChecks(symbol, checks, confirmed) {
+    const { db, clock } = this.ctx;
+    const row = db.get("SELECT id, setup FROM positions WHERE kind = 'probe' AND symbol = ? ORDER BY id DESC LIMIT 1", symbol);
+    if (!row) return;
+    const s = JSON.parse(row.setup || '{}');
+    if (s.confirmed) return;
+    db.run('UPDATE positions SET setup = ? WHERE id = ?', JSON.stringify({ ...s, checks, confirmed }), row.id);
+  }
+
+  // ------------------------------------------------------------------ two-stage buy
+  /** At 15:15: add the second part of each new position if the breakout is still holding. */
+  async stageTwo() {
+    const { db, clock, settings } = this.ctx;
+    const rules = settings.rules;
+    const now = clock.now();
+    for (const row of db.all("SELECT * FROM positions WHERE status = 'open' AND kind IN ('paper','live')")) {
+      const s = JSON.parse(row.setup || '{}');
+      if (s.stage !== 1 || !s.plannedAdd) continue;
+      if (now - new Date(row.entry_ts) < 30 * 60000) continue; // bought in the last 30 min — check tomorrow
+      const a = this.ctx.analysis?.get(row.symbol);
+      const q = this.ctx.quotes.get(row.token);
+      const ltp = q?.ltp;
+      const t = ist(now);
+      const pace = a && q ? volumePace(q.volume || 0, t.minutes - MARKET.open, a.avgVol50) : null;
+      const thr = s.pivot * (1 + (rules.confirm?.pivotBufferPct || 0) / 100);
+      const zoneTop = s.pivot * (1 + rules.buyZonePct / 100);
+      const holds = ltp && ltp >= thr && ltp > row.stop && (pace == null || pace >= rules.minVolPace);
+      const done = (stage, note) => db.run('UPDATE positions SET setup = ? WHERE id = ?', JSON.stringify({ ...s, stage, stage2Note: note }), row.id);
+      if (!holds) {
+        done(0, 'Second part skipped — the breakout did not hold');
+        this.log(`${row.symbol}: second part skipped — the breakout did not hold (₹${ltp} vs pivot ₹${s.pivot})`, 'warn');
+        continue;
+      }
+      if (ltp > zoneTop) {
+        done(0, 'Second part skipped — price too far above the pivot');
+        this.log(`${row.symbol}: second part skipped — price ₹${ltp} is more than ${rules.buyZonePct}% above the pivot`);
+        continue;
+      }
+      const cap = await this.capital(row.kind);
+      const add = Math.min(s.plannedAdd, Math.floor((cap.cash * 0.995) / ltp));
+      if (add < 1) {
+        done(0, 'Second part skipped — not enough free cash');
+        this.log(`${row.symbol}: second part skipped — not enough free cash`, 'warn');
+        continue;
+      }
+      let fillQty = add,
+        fillPrice = roundTick(ltp * (1 + rules.slippagePct / 100), this.tickOf(row.symbol)),
+        orderId = null;
+      if (row.kind === 'live') {
+        const res = await this.ctx.liveBroker.execute({ symbol: row.symbol, side: 'BUY', qty: add, price: ltp * 1.002, tick: this.tickOf(row.symbol), getLtp: () => this.ltpOf(row.symbol), limitCap: zoneTop });
+        if (!res.filledQty) {
+          done(0, `Second part not filled (${res.status})`);
+          continue;
+        }
+        fillQty = res.filledQty;
+        fillPrice = res.avgPrice;
+        orderId = res.orderId;
+      }
+      const charges = deliveryCharges('BUY', fillQty, fillPrice);
+      const cur = db.get('SELECT * FROM positions WHERE id = ?', row.id);
+      const newQty = cur.qty_initial + fillQty;
+      const avg = round((cur.entry_price * cur.qty_initial + fillPrice * fillQty) / newQty);
+      db.update('positions', row.id, {
+        entry_price: avg,
+        qty_initial: newQty,
+        qty_open: cur.qty_open + fillQty,
+        realized: round(cur.realized - charges),
+        charges: round(cur.charges + charges),
+        setup: JSON.stringify({ ...s, stage: 2, stage2Note: `Added ${fillQty} @ ${fillPrice}` }),
+      });
+      db.insert('fills', { position_id: row.id, ts: now.toISOString(), side: 'BUY', qty: fillQty, price: fillPrice, charges, reason: 'Second part — breakout held', order_id: orderId });
+      this.log(`➕ ${row.symbol}: breakout held — added ${fillQty} @ ${inr(fillPrice)} (now ${newQty} shares, average ${inr(avg)})`, 'success');
+      this.ctx.notify?.('fills', `➕ <b>Added ${fillQty} ${esc(row.symbol)}</b> @ ${inr(fillPrice)}${row.kind === 'paper' ? ' <i>[paper]</i>' : ''}\nBreakout held into the close · now ${newQty} shares`);
+      if (row.kind === 'live' && settings.backupGtt) await this.syncGtt(row.id);
+      this.ctx.bus.push('positions', {});
+    }
+  }
+
   // ------------------------------------------------------------------ position management
   /** Called every second in market hours. */
   async onTick({ isCloseCheck = false } = {}) {
@@ -389,6 +519,15 @@ export class Executor {
         if (rules.trailMethod === 'ema21' && a.ema21) trailLevel = emaNext(a.ema21, price, 21);
         else if (rules.trailMethod === 'sma50' && a.sma50) trailLevel = a.sma50;
       }
+      // Failed breakout: a new buy that closes back below its pivot is sold at the close
+      if (isCloseCheck && rules.failedExit?.enabled && !row.partial_done) {
+        const pv = JSON.parse(row.setup || '{}').pivot;
+        const held = tradingDaysBetween(row.entry_date, ist(this.now()).date, settings.holidays);
+        if (pv && price < pv && held < (rules.failedExit.days || 2)) {
+          this.track(this.exit(row, row.qty_open, 'failed', `Closing back below the pivot ₹${pv} — failed breakout, exiting early to keep the loss small`, price));
+          continue;
+        }
+      }
       const actions = managePosition(pos, price, { isCloseCheck, trailLevel }, rules);
       for (const act of actions) {
         if (act.type === 'stop') this.track(this.exit(row, act.qty, 'stop', act.reason, price));
@@ -403,7 +542,7 @@ export class Executor {
           );
         } else if (act.type === 'raiseStop') {
           db.run('UPDATE positions SET stop = ? WHERE id = ?', act.newStop, row.id);
-          if (row.kind !== 'shadow') this.log(`${row.symbol}: ${act.reason}`);
+          if (!['shadow', 'probe'].includes(row.kind)) this.log(`${row.symbol}: ${act.reason}`);
           if (row.kind === 'live' && settings.backupGtt) await this.syncGtt(row.id);
         } else if (act.type === 'trail') this.track(this.exit(row, act.qty, 'trail', act.reason, price));
       }
@@ -467,10 +606,10 @@ export class Executor {
         Object.assign(upd, { status: 'closed', exit_ts: clock.now().toISOString(), exit_date: t.date, exit_price: round(avgExit), exit_reason: reasonKey });
       }
       db.update('positions', cur.id, upd);
-      if (cur.kind !== 'shadow') {
+      if (!['shadow', 'probe'].includes(cur.kind)) {
         const pct = round((fillPrice / cur.entry_price - 1) * 100, 2);
-        const emoji = reasonKey === 'stop' ? (pct < 0 ? '🛑' : '🟡') : reasonKey === 'partial' ? '💰' : '🏁';
-        const label = { stop: 'Stop', partial: 'Partial profit', trail: 'Trailing exit', manual: 'Manual exit', outside: 'Closed outside Pivot' }[reasonKey] || reasonKey;
+        const emoji = reasonKey === 'stop' || reasonKey === 'failed' ? (pct < 0 ? '🛑' : '🟡') : reasonKey === 'partial' ? '💰' : '🏁';
+        const label = { stop: 'Stop', partial: 'Partial profit', trail: 'Trailing exit', manual: 'Manual exit', outside: 'Closed outside Pivot', failed: 'Failed breakout' }[reasonKey] || reasonKey;
         this.log(`${emoji} ${label}: sold ${qty} ${cur.symbol} @ ${inr(fillPrice)} (${pct >= 0 ? '+' : ''}${pct}%) — ${reasonText}`, pct >= 0 ? 'success' : 'warn');
         this.ctx.notify?.('exits', `${emoji} <b>${label} · ${esc(cur.symbol)}</b>${cur.kind === 'paper' ? ' <i>[paper]</i>' : ''}\nSold ${qty} @ ${inr(fillPrice)} (${pct >= 0 ? '+' : ''}${pct}%) · P&L ${inr(round(pnl, 0))}\n${esc(reasonText)}${qtyOpen > 0 ? `\n${qtyOpen} shares still open` : ''}`);
         this.ctx.bus.push('positions', {});
