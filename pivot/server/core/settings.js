@@ -68,6 +68,11 @@ export function saveSecrets(db, patch) {
   const cur = loadSecrets(db);
   const next = { ...cur };
   for (const [k, v] of Object.entries(patch)) if (typeof v === 'string' && !v.includes('•')) next[k] = v.trim();
+  if (patch.telegramToken) {
+    // Accept a pasted BotFather message: keep only the token itself (digits:letters)
+    const m = String(patch.telegramToken).match(/\d{6,}:[A-Za-z0-9_-]{20,}/);
+    if (m) next.telegramToken = m[0];
+  }
   db.kvSet('secrets', next);
   return next;
 }

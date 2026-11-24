@@ -255,10 +255,20 @@ function TelegramGroup({ data, reload }) {
     const i = setInterval(reload, 3000); // notice the pairing automatically
     return () => clearInterval(i);
   }, [code, t.paired]);
+  const [saving, setSaving] = useState(false);
   const saveToken = async () => {
-    await api('/secrets', { method: 'PUT', body: { telegramToken: token } });
-    setToken('');
-    setTimeout(reload, 1500);
+    setSaving(true);
+    setMsg('');
+    try {
+      const r = await api('/secrets', { method: 'PUT', body: { telegramToken: token } });
+      setToken('');
+      setMsg(r.telegram?.ok ? `✓ Bot @${r.telegram.bot} accepted. Now tap Pair.` : `✗ ${r.telegram?.error || 'Telegram did not accept the token'}`);
+      reload();
+    } catch (e) {
+      setMsg(e.message);
+    } finally {
+      setSaving(false);
+    }
   };
   const pair = async () => {
     try {
@@ -281,7 +291,7 @@ function TelegramGroup({ data, reload }) {
         icon={Send}
         iconTone="sky"
         title={t.paired ? `Connected${t.bot ? ' · @' + t.bot : ''}` : data.secrets.telegramToken ? (t.ok ? `Bot @${t.bot} ready — pair your chat` : 'Bot token saved') : 'Not set up'}
-        subtitle={!data.secrets.telegramToken ? 'In Telegram, message @BotFather → /newbot → copy the token here' : undefined}
+        subtitle={!data.secrets.telegramToken ? 'In Telegram, message @BotFather → /newbot → copy the token here' : !t.ok && t.error ? `Problem: ${t.error}` : undefined}
         right={t.paired ? <Button size="sm" tone="soft" onClick={test}>Test</Button> : data.secrets.telegramToken ? <Button size="sm" onClick={pair}>Pair</Button> : null}
       />
       {code && !t.paired && (
@@ -296,7 +306,7 @@ function TelegramGroup({ data, reload }) {
       )}
       <div className="px-4 sm:px-5 py-4 space-y-3">
         <TextField value={token} onChange={setToken} placeholder={data.secrets.telegramToken ? `Token saved (${data.secrets.telegramToken})` : 'Bot token from @BotFather'} type="password" />
-        <Button onClick={saveToken} disabled={!token}>
+        <Button onClick={saveToken} disabled={!token} loading={saving}>
           Save token
         </Button>
         {msg && <div className="font-semibold">{msg}</div>}

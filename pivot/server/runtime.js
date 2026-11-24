@@ -130,7 +130,7 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
       },
       onCommand: (cmd) => telegramCommand(ctx, cmd),
     });
-    ctx.telegram.start();
+    return ctx.telegram.start();
   };
   ctx.reconfigureTelegram();
 

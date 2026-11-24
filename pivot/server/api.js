@@ -256,7 +256,7 @@ export function mountApi(app, ctx, auth, { dbFile }) {
       secrets: maskSecrets(ctx.secrets),
       publicUrl: ctx.publicUrl || `${req.protocol}://${req.get('host')}`,
       kiteRedirect: `${ctx.publicUrl || `${req.protocol}://${req.get('host')}`}/api/kite/callback`,
-      telegram: { ok: !!ctx.telegram?.ok, bot: ctx.telegram?.botName, paired: !!ctx.secrets.telegramChatId },
+      telegram: { ok: !!ctx.telegram?.ok, bot: ctx.telegram?.botName, paired: !!ctx.secrets.telegramChatId, error: ctx.telegram?.error || null },
       kite: { connected: !!ctx.kiteSession.connected, userName: ctx.kiteSession.userName },
       universeCount: db.get('SELECT COUNT(*) AS n FROM universe WHERE active = 1').n,
       historyFrom: db.get('SELECT MIN(date) AS d FROM candles').d,
@@ -274,16 +274,18 @@ export function mountApi(app, ctx, auth, { dbFile }) {
   );
   app.put(
     '/api/secrets',
-    wrap((req) => {
+    wrap(async (req) => {
       const allowed = ['kiteApiKey', 'kiteApiSecret', 'telegramToken'];
       const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => allowed.includes(k)));
       ctx.secrets = saveSecrets(db, patch);
       if ('kiteApiKey' in patch || 'kiteApiSecret' in patch) ctx.reconfigureKite();
+      let telegram;
       if ('telegramToken' in patch) {
         ctx.secrets = saveSecrets(db, { telegramChatId: '' });
-        ctx.reconfigureTelegram();
+        const ok = await Promise.race([ctx.reconfigureTelegram(), new Promise((r) => setTimeout(() => r(false), 20000))]);
+        telegram = { ok: !!ok, bot: ctx.telegram?.botName, error: ok ? null : ctx.telegram?.error || 'No answer from Telegram' };
       }
-      return { secrets: maskSecrets(ctx.secrets) };
+      return { secrets: maskSecrets(ctx.secrets), telegram };
     }),
   );
   app.post(

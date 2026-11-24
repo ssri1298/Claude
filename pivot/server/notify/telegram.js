@@ -21,14 +21,22 @@ export class Telegram {
   }
 
   async api(method, body) {
-    const res = await fetch(`https://api.telegram.org/bot${this.token}/${method}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body || {}),
-      signal: AbortSignal.timeout(method === 'getUpdates' ? 40000 : 15000),
-    });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.description || `Telegram ${method} failed`);
+    let res;
+    try {
+      res = await fetch(`https://api.telegram.org/bot${this.token}/${method}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+        signal: AbortSignal.timeout(method === 'getUpdates' ? 40000 : 15000),
+      });
+    } catch (e) {
+      throw new Error(`the server could not reach Telegram (${e.cause?.code || e.name || e.message})`);
+    }
+    const json = await res.json().catch(() => ({}));
+    if (!json.ok) {
+      if (res.status === 401 || res.status === 404) throw new Error('Telegram says this token is wrong (Unauthorized). Copy the token again from @BotFather → /mybots → your bot → API Token');
+      throw new Error(json.description || `Telegram ${method} failed (${res.status})`);
+    }
     return json.result;
   }
 
@@ -39,13 +47,16 @@ export class Telegram {
       const me = await this.api('getMe');
       this.botName = me.username;
       this.ok = true;
+      this.error = null;
     } catch (e) {
       this.ok = false;
-      this.log(`Telegram bot token not accepted: ${e.message}`, 'warn');
+      this.error = e.message;
+      this.log(`Telegram: ${e.message}`, 'warn');
       this.running = false;
-      return;
+      return false;
     }
     this.poll();
+    return true;
   }
 
   stop() {
