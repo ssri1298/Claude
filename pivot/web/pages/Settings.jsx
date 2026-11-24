@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ShieldCheck, Wallet, Target, Repeat, KeyRound, Send, Bell, Palette, Database, LogOut, Copy, Check, CalendarOff, Zap, TrendingUp } from 'lucide-react';
+import { ShieldCheck, Wallet, Target, Repeat, KeyRound, Send, Bell, Palette, Database, LogOut, Copy, Check, CalendarOff, Zap, TrendingUp, Download, Loader2 } from 'lucide-react';
 import { api, useApi, applyTheme, getTheme } from '../lib.js';
 import { LargeTitle, List, Row, Toggle, Segmented, NumberField, TextField, Button, Spinner, Sheet, Pill } from '../components/ui.jsx';
 
@@ -137,6 +137,8 @@ export default function Settings({ query }) {
       <Group title="Appearance">
         <Row icon={Palette} iconTone="rose" title="Theme" right={<ThemePicker />} />
       </Group>
+
+      <AppUpdates />
 
       <Group title="Data">
         <Row icon={Database} iconTone="sky" title="Stocks tracked" subtitle={`Nifty 500 list · history from ${data.historyFrom || '—'}`} right={<b className="num">{data.universeCount}</b>} />
@@ -570,6 +572,151 @@ function HolidaysGroup({ s, save, names = {}, sync, reload }) {
           </Button>
         </div>
       </Row>
+    </Group>
+  );
+}
+
+function AppUpdates() {
+  const { data, reload } = useApi('/update');
+  const [ask, setAsk] = useState(false);
+  const [busy, setBusy] = useState('');
+  const [token, setToken] = useState('');
+  const [restarting, setRestarting] = useState(false);
+  const st = data?.status;
+  const state = restarting ? 'updating' : st?.state;
+
+  // While checking or updating, keep polling; during the restart the server is briefly unreachable.
+  useEffect(() => {
+    if (!busy && state !== 'updating') return;
+    const startVersion = data?.version?.commit;
+    const t = setInterval(async () => {
+      try {
+        const d = await api('/update');
+        if (restarting && d.version?.commit && d.version.commit !== startVersion) return location.reload();
+        if (busy === 'check' && d.status?.at !== st?.at) setBusy('');
+        if (!restarting && d.status?.state === 'updating') setRestarting(true);
+        if (d.status?.state === 'error' || d.status?.state === 'done') {
+          setRestarting(false);
+          setBusy('');
+        }
+        reload();
+      } catch {
+        /* server restarting — keep waiting */
+      }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [busy, state, restarting, data?.version?.commit, st?.at]);
+
+  if (!data) return null;
+  const fmt = (iso) => (iso ? new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+  const check = async () => {
+    setBusy('check');
+    try {
+      await api('/update/check', { method: 'POST' });
+    } catch (e) {
+      setBusy('');
+      alert(e.message);
+    }
+  };
+  const update = async () => {
+    setAsk(false);
+    setBusy('update');
+    try {
+      await api('/update/apply', { method: 'POST' });
+      setRestarting(true);
+    } catch (e) {
+      setBusy('');
+      alert(e.message);
+    }
+  };
+  const saveToken = async () => {
+    await api('/secrets', { method: 'PUT', body: { githubToken: token } });
+    setToken('');
+    reload();
+    check();
+  };
+
+  return (
+    <Group title="App updates" footer={data.available ? 'Pivot checks for a new version every day. Updating takes 2–5 minutes; open positions stay protected by their stops and the backup GTT orders at Zerodha.' : undefined}>
+      <Row
+        icon={Download}
+        iconTone="lav"
+        title={data.version ? `Version ${data.version.commit}` : 'Current version'}
+        subtitle={data.version ? `${data.version.subject} · ${fmt(data.version.date)}` : data.demo ? 'Demo mode' : 'Version information appears after the next install'}
+      />
+      {!data.available ? (
+        <div className="px-5 py-4 text-ink2 text-[15px]">{data.demo ? 'Updates are not available in demo mode.' : 'In-app updates switch on after you run the install command once more from the SSH terminal.'}</div>
+      ) : (
+        <>
+          <div className="px-5 py-4">
+            {state === 'updating' ? (
+              <div className="flex items-center gap-3 font-semibold">
+                <Loader2 className="animate-spin text-accent" size={22} />
+                {st?.message || 'Updating…'} The page reloads by itself when Pivot is back.
+              </div>
+            ) : state === 'available' ? (
+              <div>
+                <div className="font-bold text-[17px] text-mint">A new version is ready</div>
+                <ul className="mt-2 space-y-1 text-[15px]">
+                  {(st.newVersions || []).slice(0, 8).map((v) => (
+                    <li key={v.commit} className="flex gap-2">
+                      <span className="text-ink3 num shrink-0">{v.commit}</span>
+                      <span>{v.subject}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : state === 'uptodate' ? (
+              <div className="font-semibold">✓ Pivot is up to date <span className="text-ink3 font-normal text-[14px]">· checked {fmt(st.at)}</span></div>
+            ) : state === 'done' ? (
+              <div className="font-semibold text-mint">✓ Updated {fmt(st.at)}</div>
+            ) : state === 'error' ? (
+              <div>
+                <div className="font-semibold text-coral">{st.message}</div>
+                {data.log && <pre className="mt-2 text-[12px] bg-card2 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap">{data.log}</pre>}
+              </div>
+            ) : (
+              <div className="text-ink2">Not checked yet.</div>
+            )}
+          </div>
+          <div className="px-5 pb-4 flex flex-wrap gap-2">
+            <Button size="sm" tone="soft" onClick={check} loading={busy === 'check'} disabled={state === 'updating'}>
+              Check for updates
+            </Button>
+            {state === 'available' && (
+              <Button size="sm" tone="mint" onClick={() => setAsk(true)} loading={busy === 'update'}>
+                Update now
+              </Button>
+            )}
+          </div>
+          {(st?.needsToken || data.hasToken) && (
+            <div className="px-5 pb-5 space-y-2">
+              <div className="text-[15px] text-ink2">
+                {data.hasToken ? 'A GitHub token is saved.' : 'Your GitHub repository is private. Create a read-only token: GitHub → Settings → Developer settings → Fine-grained tokens → this repository, Contents: Read-only.'}
+              </div>
+              <TextField value={token} onChange={setToken} placeholder={data.hasToken ? 'Replace GitHub token' : 'GitHub token'} type="password" />
+              <Button size="sm" onClick={saveToken} disabled={!token}>
+                Save token
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+      <Sheet open={ask} onClose={() => setAsk(false)} title="Update Pivot now?">
+        <ul className="space-y-2 text-[17px]">
+          <li>• Pivot downloads the new version and restarts — about 2–5 minutes.</li>
+          <li>• Your settings, trades and history are kept.</li>
+          <li>• Open positions stay protected by the backup stop orders at Zerodha. Best done outside market hours.</li>
+        </ul>
+        <div className="grid grid-cols-2 gap-3 mt-6">
+          <Button tone="soft" size="lg" onClick={() => setAsk(false)}>
+            Later
+          </Button>
+          <Button tone="mint" size="lg" onClick={update}>
+            Update now
+          </Button>
+        </div>
+      </Sheet>
     </Group>
   );
 }

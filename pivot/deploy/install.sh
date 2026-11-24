@@ -53,6 +53,9 @@ cd "$APP"
 echo "==> Installing dependencies and building the app (takes a few minutes)"
 npm ci --no-audit --no-fund
 npm run build
+# Record which version is installed (shown in Settings → App updates)
+git -c safe.directory='*' -C "$SRC" log -1 --format='%h|%cI|%s' 2>/dev/null | python3 -c 'import json,sys; c,d,s=(sys.stdin.read().strip().split("|",2)+["","",""])[:3]; json.dump({"commit":c,"date":d,"subject":s}, open("version.json","w"))' || true
+mkdir -p "$DATA/update"
 chown -R pivot:pivot "$APP" "$DATA"
 
 IP="$(curl -fsS https://checkip.amazonaws.com || curl -fsS https://api.ipify.org)"
@@ -102,7 +105,35 @@ ufw allow 80/tcp >/dev/null || true
 ufw allow 443/tcp >/dev/null || true
 ufw --force enable >/dev/null || true
 
+# In-app updater: the app leaves a request file; this root-owned service does the update.
+if [ "$SERVICE" = "pivot" ]; then
+  mkdir -p /etc/pivot /opt/pivot-updater
+  echo "$SRC" > /etc/pivot/source
+  install -m 0755 -o root -g root "$SRC/deploy/updater.sh" /opt/pivot-updater/updater.sh
+  cat > /etc/systemd/system/pivot-update.service <<UNIT
+[Unit]
+Description=Pivot in-app updater
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/pivot-updater/updater.sh
+TimeoutStartSec=1800
+UNIT
+  cat > /etc/systemd/system/pivot-update.path <<UNIT
+[Unit]
+Description=Watch for Pivot update requests
+
+[Path]
+PathExists=$DATA/update/request.json
+Unit=pivot-update.service
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+fi
+
 systemctl daemon-reload
+[ "$SERVICE" = "pivot" ] && systemctl enable --now pivot-update.path
 systemctl enable --now $SERVICE
 systemctl restart $SERVICE
 systemctl reload caddy || systemctl restart caddy

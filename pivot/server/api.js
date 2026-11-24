@@ -11,6 +11,7 @@ import { NIFTY50_TOKEN, parseNifty500Csv } from './broker/feeds.js';
 import { indexSnapshot, stockSnapshot } from './core/quotes.js';
 import { CHECK_LABELS } from './engine/confirm.js';
 import { syncHolidays } from './core/holidays.js';
+import { createUpdater } from './core/updater.js';
 
 const wrap = (fn) => async (req, res) => {
   try {
@@ -30,9 +31,10 @@ const AGENT_INFO = {
   executor: { name: 'Executor', role: 'Sizes trades, places orders, manages stops & profits', icon: 'shield' },
 };
 
-export function mountApi(app, ctx, auth, { dbFile }) {
+export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
   const { db } = ctx;
   const ag = () => ctx.agents;
+  const updater = ctx.demo || !dataDir ? null : createUpdater({ dataDir, getToken: () => ctx.secrets.githubToken, log: (m) => ctx.bus.log('Parent', m) });
 
   // ------------------------------------------------------------ auth (public)
   app.get('/api/auth/status', (req, res) => res.json({ setup: auth.hasPassword(), loggedIn: auth.valid(req), demo: ctx.demo }));
@@ -123,6 +125,7 @@ export function mountApi(app, ctx, auth, { dbFile }) {
         kite: { configured: !!ctx.secrets.kiteApiKey, connected: ctx.demo || !!ctx.kiteSession.connected, userName: ctx.kiteSession.userName, demo: ctx.demo },
         telegram: { configured: !!ctx.secrets.telegramToken, paired: !!ctx.secrets.telegramChatId, ok: !!ctx.telegram?.ok, bot: ctx.telegram?.botName },
         push: { devices: ctx.webpush.subs().length },
+        update: updater?.available() ? { state: updater.status()?.state || null, behind: updater.status()?.behind || 0 } : null,
         capital,
         today: { realized: round(todayClosed.reduce((s, x) => s + x.realized, 0)), dayChange: round(dayChange), trades: todayFills.length },
         agents: agentsView(ctx),
@@ -336,7 +339,7 @@ export function mountApi(app, ctx, auth, { dbFile }) {
   app.put(
     '/api/secrets',
     wrap(async (req) => {
-      const allowed = ['kiteApiKey', 'kiteApiSecret', 'telegramToken'];
+      const allowed = ['kiteApiKey', 'kiteApiSecret', 'telegramToken', 'githubToken'];
       const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => allowed.includes(k)));
       ctx.secrets = saveSecrets(db, patch);
       if ('kiteApiKey' in patch || 'kiteApiSecret' in patch) ctx.reconfigureKite();
@@ -381,6 +384,26 @@ export function mountApi(app, ctx, auth, { dbFile }) {
       const r = await syncHolidays(ctx, { force: true });
       if (!r.ok) throw Object.assign(new Error(`NSE could not be reached (${r.error}). The saved list is still in use.`), { status: 502 });
       return r;
+    }),
+  );
+  // ---------------------------------------------------------- in-app updates
+  app.get(
+    '/api/update',
+    wrap(() => ({
+      available: !!updater?.available(),
+      demo: ctx.demo,
+      version: updater?.version() || null,
+      status: updater?.status() || null,
+      hasToken: !!ctx.secrets.githubToken,
+      log: updater?.status()?.state === 'error' ? updater.lastLog() : undefined,
+    })),
+  );
+  app.post('/api/update/check', wrap(() => (updater ? updater.request('check') : Promise.reject(Object.assign(new Error('Not available here'), { status: 400 })))));
+  app.post(
+    '/api/update/apply',
+    wrap(() => {
+      if (!updater) throw Object.assign(new Error('Not available here'), { status: 400 });
+      return updater.request('update');
     }),
   );
   app.put(

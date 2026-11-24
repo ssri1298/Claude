@@ -28,7 +28,7 @@ export async function startServer({ port = Number(process.env.PORT) || 8080, dem
     res.setHeader('X-Frame-Options', 'DENY');
     next();
   });
-  mountApi(app, ctx, auth, { dbFile });
+  mountApi(app, ctx, auth, { dbFile, dataDir });
   const dist = join(root, 'dist');
   if (existsSync(dist)) {
     app.use(express.static(dist, { index: false, maxAge: '1h' }));

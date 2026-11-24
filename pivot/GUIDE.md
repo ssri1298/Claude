@@ -142,13 +142,17 @@ You get the 8:00 am Kite login reminder, buy signals, fills, stops, partial prof
 - **Market holiday:** add NSE holidays in Settings → Market holidays so the agents rest.
 - **See what's happening:** the **Agents** page shows every action each agent took, with the time.
 
-To install a newer version later, open the SSH terminal and run:
+### Updating Pivot
+
+From the app: **Settings → App updates → Check for updates → Update now**. Pivot also checks every day and shows **"A new version of Pivot is ready"** on the Today page. An update takes 2–5 minutes, and the page reloads by itself when Pivot is back. Your trades and settings are kept.
+
+If your GitHub repository is private, the first check asks for a **read-only GitHub token**. Create one at GitHub → Settings → Developer settings → Fine-grained tokens, for this repository with **Contents: Read-only**, and paste it into the box.
+
+You can still update from the SSH terminal if you prefer:
 
 ```bash
 cd ~/Claude && git pull && sudo bash pivot/deploy/install.sh
 ```
-
-Your trades and settings are kept.
 
 ## Want to look around first? Demo mode
 
