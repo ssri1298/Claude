@@ -27,6 +27,7 @@ export const DEFAULT_RULES = {
   confirm: DEFAULT_CONFIRM, // breakout confirmation checks (see confirm.js)
   twoStage: { enabled: true, firstFraction: 0.5, addTime: '15:15' }, // half at the breakout, rest at 15:15 if it holds
   failedExit: { enabled: true, days: 2 }, // sell a new buy that closes back below the pivot within 2 days
+  timeExit: { enabled: true, days: 7 }, // sell at the close if neither the stop nor the +10% target was hit within 7 trading days
 };
 
 /** Zerodha equity-delivery charges (NSE), per order side. */

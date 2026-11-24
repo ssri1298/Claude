@@ -235,3 +235,24 @@ test('failed-breakout exit: closing back below the pivot sells early', async () 
   const loss = pos.realized / (pos.entry_price * pos.qty_initial);
   assert.ok(loss > -0.03, `small loss (${(loss * 100).toFixed(2)}%)`);
 });
+
+test('time exit: no stop and no +10% within 7 trading days → sold at the close', async () => {
+  const { ctx, a, ex, an } = await setup();
+  ctx.updateSettings({ confirmTrades: false, rules: { twoStage: { enabled: false } } });
+  quote(ctx, 101);
+  const [s] = an.rank([signal(a, 101)]);
+  await ex.consider(s);
+  await new Promise((r) => setTimeout(r, 20));
+  const pos0 = ctx.db.get("SELECT * FROM positions WHERE kind = 'paper'");
+  // 6 trading days later: still open
+  ctx.clock.set(istDate('2028-03-23', toMinutes('15:20')));
+  quote(ctx, 103);
+  await tick(ex, { isCloseCheck: true });
+  assert.equal(ctx.db.get('SELECT status FROM positions WHERE id = ?', pos0.id).status, 'open');
+  // 7 trading days later: time exit
+  ctx.clock.set(istDate('2028-03-24', toMinutes('15:20')));
+  await tick(ex, { isCloseCheck: true });
+  const pos = ctx.db.get('SELECT * FROM positions WHERE id = ?', pos0.id);
+  assert.equal(pos.status, 'closed');
+  assert.equal(pos.exit_reason, 'time');
+});

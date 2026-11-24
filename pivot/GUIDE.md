@@ -120,6 +120,7 @@ You get the 8:00 am Kite login reminder, buy signals, fills, stops, partial prof
 - **Confirmation (avoids false alarms)**: the first tick above the pivot only *arms* a stock. Pivot buys once a **15-minute candle closes above the pivot** (by at least 0.3%), price is **above VWAP** and in the **top third of the day's range**. If the stock gapped up above the pivot, it waits for the **30-minute high** to break.
 - **Two-stage buy**: half the position at the confirmed breakout, and the other half at **3:15 pm** only if the stock is still above the pivot with good volume.
 - **Failed breakout exit**: if a new buy **closes back below its pivot** within 2 days, it's sold at the close. That's usually a 1–3% loss instead of the full stop.
+- **Time exit**: if a trade hits neither the stop nor the +10% target within **7 trading days**, it's sold at the close to free up the money. You can change the days or switch it off in Settings.
 - **Measuring**: every breakout is also tracked from its first tick. **Dashboard → Breakout checks** shows which checks actually picked the winners.
 - **Market filter**: when Nifty is in a correction, new buys pause. Setups are still watched. When the market is "under pressure", only setups scoring 75+ are bought.
 - **Size**: 10% of capital per stock, at most 10 stocks and at most 3 from one industry.

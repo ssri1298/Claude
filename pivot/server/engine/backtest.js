@@ -22,6 +22,7 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
     confirm: { ...DEFAULT_RULES.confirm, ...(rules?.confirm || {}) },
     twoStage: { ...DEFAULT_RULES.twoStage, ...(rules?.twoStage || {}) },
     failedExit: { ...DEFAULT_RULES.failedExit, ...(rules?.failedExit || {}) },
+    timeExit: { ...DEFAULT_RULES.timeExit, ...(rules?.timeExit || {}) },
   };
   const prepared = prepareUniverse(stocks);
   const bySym = new Map(prepared.map((s) => [s.symbol, s]));
@@ -112,6 +113,10 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
       // Failed breakout: closed back below the pivot within the first days → sell at the close
       if (FX.enabled && pos.qtyOpen > 0 && !pos.partialDone && c < pos.pivot && di - dates.indexOf(pos.entryDate) < (FX.days || 2)) {
         sell(pos, pos.qtyOpen, c * (1 - R.slippagePct / 100), d, 'failed');
+      }
+      // Time exit: neither the stop nor the +10% target within N trading days → sell at the close
+      if (R.timeExit?.enabled && pos.qtyOpen > 0 && !pos.partialDone && di - dates.indexOf(pos.entryDate) >= (R.timeExit.days || 7)) {
+        sell(pos, pos.qtyOpen, c * (1 - R.slippagePct / 100), d, 'time');
       }
     }
 

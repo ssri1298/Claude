@@ -13,7 +13,7 @@ const SCHEDULE = [
   ['on breakout', 'Executor', 'Sizes the trade (10% of capital), sets the stop (max 6%), asks for your approval, buys, places a backup GTT', ShieldCheck],
   ['every second', 'Executor', 'Stop-loss · sell ⅓ at +10% · stop to breakeven · re-entry watch', ShieldCheck],
   ['15:15', 'Executor', 'Two-stage buy: adds the second half of today’s new positions if the breakout held', ShieldCheck],
-  ['15:20', 'Executor', 'Close check: failed breakouts (back below the pivot) are sold; trailing exit below the 21-day EMA', ShieldCheck],
+  ['15:20', 'Executor', 'Close check: failed breakouts (back below the pivot) are sold; time exit after 7 trading days without the stop or +10%; trailing exit below the 21-day EMA', ShieldCheck],
   ['15:40', 'Parent', 'Fresh analysis for tomorrow, equity snapshot, evening report', Crown],
 ];
 const TONE = { Parent: 'bg-lav-soft text-lav', Screener: 'bg-sky-soft text-sky', Analyst: 'bg-peach-soft text-peach', Executor: 'bg-mint-soft text-mint' };

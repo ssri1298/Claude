@@ -100,11 +100,13 @@ export default function Settings({ query }) {
         )}
       </Group>
 
-      <Group title="Two-stage buy & failed breakouts" footer="Half the position is bought at the confirmed breakout; the other half at 3:15 pm only if it is still above the pivot with good volume. A new buy that closes back below its pivot is sold at the close (usually a 1–3% loss instead of the full stop).">
+      <Group title="Two-stage buy, failed breakouts & time exit" footer="A trade that goes nowhere ties up capital: the time exit sells it at the close if it has neither hit the stop nor the +10% target after the set number of trading days. Half the position is bought at the confirmed breakout; the other half at 3:15 pm only if it is still above the pivot with good volume. A new buy that closes back below its pivot is sold at the close (usually a 1–3% loss instead of the full stop).">
         <Row icon={Zap} iconTone="butter" title="Two-stage buy" right={<Toggle checked={r.twoStage.enabled} onChange={(v) => save({ rules: { twoStage: { enabled: v } } })} />} />
         {r.twoStage.enabled && <Row title="First part" right={<NumberField value={Math.round(r.twoStage.firstFraction * 100)} onChange={(v) => save({ rules: { twoStage: { firstFraction: Math.min(0.9, Math.max(0.1, v / 100)) } } })} suffix="%" width="w-20" />} />}
         <Row title="Sell failed breakouts early" subtitle="Close back below the pivot" right={<Toggle checked={r.failedExit.enabled} onChange={(v) => save({ rules: { failedExit: { enabled: v } } })} />} />
         {r.failedExit.enabled && <Row title="Within the first" right={<NumberField value={r.failedExit.days} onChange={(v) => save({ rules: { failedExit: { days: v } } })} suffix="days" width="w-20" />} />}
+        <Row title="Time exit" subtitle={`Sell at the close if neither the stop nor +${r.partialAtPct}% is hit in time`} right={<Toggle checked={!!r.timeExit?.enabled} onChange={(v) => save({ rules: { timeExit: { enabled: v } } })} />} />
+        {r.timeExit?.enabled && <Row title="After" right={<NumberField value={r.timeExit.days} onChange={(v) => save({ rules: { timeExit: { days: Math.max(1, Math.min(60, v)) } } })} suffix="trading days" width="w-20" />} />}
       </Group>
 
       <Group title="Re-entry" footer="If a stock stops you out but reclaims its pivot on strong volume within the window, Pivot proposes buying it again.">

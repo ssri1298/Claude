@@ -652,7 +652,7 @@ function tradeView(ctx, r) {
     initialStop: r.initial_stop,
     realized: r.realized,
     charges: r.charges,
-    exitReason: { stop: r.partial_done ? 'Breakeven stop' : 'Stop-loss', trail: 'Trailing exit', manual: 'Manual', outside: 'Outside Pivot', partial: 'Partial', failed: 'Failed breakout' }[r.exit_reason] || r.exit_reason,
+    exitReason: { stop: r.partial_done ? 'Breakeven stop' : 'Stop-loss', trail: 'Trailing exit', manual: 'Manual', outside: 'Outside Pivot', partial: 'Partial', failed: 'Failed breakout', time: 'Time exit' }[r.exit_reason] || r.exit_reason,
     grade: r.grade,
     isReentry: !!r.is_reentry,
     holdDays: tradingDaysBetween(r.entry_date, r.exit_date, ctx.settings.holidays),

@@ -528,6 +528,15 @@ export class Executor {
           continue;
         }
       }
+      // Time exit: no stop and no +10% within N trading days → free up the capital at the close
+      if (isCloseCheck && rules.timeExit?.enabled && !row.partial_done) {
+        const held = tradingDaysBetween(row.entry_date, ist(this.now()).date, settings.holidays);
+        if (held >= (rules.timeExit.days || 7)) {
+          const pct = ((price / row.entry_price - 1) * 100).toFixed(1);
+          this.track(this.exit(row, row.qty_open, 'time', `No stop and no +${rules.partialAtPct}% after ${held} trading days (${pct >= 0 ? '+' : ''}${pct}%) — time exit to free up capital`, price));
+          continue;
+        }
+      }
       const actions = managePosition(pos, price, { isCloseCheck, trailLevel }, rules);
       for (const act of actions) {
         if (act.type === 'stop') this.track(this.exit(row, act.qty, 'stop', act.reason, price));
@@ -608,8 +617,8 @@ export class Executor {
       db.update('positions', cur.id, upd);
       if (!['shadow', 'probe'].includes(cur.kind)) {
         const pct = round((fillPrice / cur.entry_price - 1) * 100, 2);
-        const emoji = reasonKey === 'stop' || reasonKey === 'failed' ? (pct < 0 ? '🛑' : '🟡') : reasonKey === 'partial' ? '💰' : '🏁';
-        const label = { stop: 'Stop', partial: 'Partial profit', trail: 'Trailing exit', manual: 'Manual exit', outside: 'Closed outside Pivot', failed: 'Failed breakout' }[reasonKey] || reasonKey;
+        const emoji = reasonKey === 'stop' || reasonKey === 'failed' ? (pct < 0 ? '🛑' : '🟡') : reasonKey === 'partial' ? '💰' : reasonKey === 'time' ? '⏱' : '🏁';
+        const label = { stop: 'Stop', partial: 'Partial profit', trail: 'Trailing exit', manual: 'Manual exit', outside: 'Closed outside Pivot', failed: 'Failed breakout', time: 'Time exit' }[reasonKey] || reasonKey;
         this.log(`${emoji} ${label}: sold ${qty} ${cur.symbol} @ ${inr(fillPrice)} (${pct >= 0 ? '+' : ''}${pct}%) — ${reasonText}`, pct >= 0 ? 'success' : 'warn');
         this.ctx.notify?.('exits', `${emoji} <b>${label} · ${esc(cur.symbol)}</b>${cur.kind === 'paper' ? ' <i>[paper]</i>' : ''}\nSold ${qty} @ ${inr(fillPrice)} (${pct >= 0 ? '+' : ''}${pct}%) · P&L ${inr(round(pnl, 0))}\n${esc(reasonText)}${qtyOpen > 0 ? `\n${qtyOpen} shares still open` : ''}`);
         this.ctx.bus.push('positions', {});

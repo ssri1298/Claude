@@ -35,6 +35,7 @@ const mergeRules = (rules) => ({
   confirm: { ...DEFAULT_RULES.confirm, ...(rules?.confirm || {}) },
   twoStage: { ...DEFAULT_RULES.twoStage, ...(rules?.twoStage || {}) },
   failedExit: { ...DEFAULT_RULES.failedExit, ...(rules?.failedExit || {}) },
+  timeExit: { ...DEFAULT_RULES.timeExit, ...(rules?.timeExit || {}) },
 });
 
 const isSetup = (a) => a.vcp?.valid && a.trend?.pass && ['near', 'breakout', 'forming'].includes(a.stage) && (a.vcp.distToPivotPct ?? 0) <= 0;
@@ -151,6 +152,10 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
     // Failed breakout: closed back below the pivot within the first days → sell at the close
     if (isLast && FX.enabled && pos.qtyOpen > 0 && !pos.partialDone && c < pos.pivot && dates.indexOf(d) - dates.indexOf(pos.entryDate) < (FX.days || 2)) {
       return sell(pos, pos.qtyOpen, c * (1 - slip), d, time, 'failed');
+    }
+    // Time exit: neither the stop nor the +10% target within N trading days → sell at the close
+    if (isLast && R.timeExit?.enabled && pos.qtyOpen > 0 && !pos.partialDone && dates.indexOf(d) - dates.indexOf(pos.entryDate) >= (R.timeExit.days || 7)) {
+      return sell(pos, pos.qtyOpen, c * (1 - slip), d, time, 'time');
     }
     if (pos.qtyOpen <= 0 || !pos.partialDone) return;
     let trailLevel = null;
