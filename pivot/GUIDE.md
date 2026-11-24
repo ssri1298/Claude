@@ -87,6 +87,20 @@ Open the app address on your phone and computer, then **choose a password**.
 
 Telegram commands you can send to your bot: `/status` `/positions` `/picks` `/pause` `/resume`
 
+## Step 4b — Pivot app notifications (instead of, or as well as, Telegram)
+
+Pivot can notify your phone directly, without Telegram.
+
+**iPhone** (iOS 16.4 or newer):
+1. Open your Pivot address in **Safari** → **Share** → **Add to Home Screen** → **Add**.
+2. Open Pivot **from the new home-screen icon**.
+3. Go to **Settings → Pivot app notifications → Turn on**, then tap **Allow**.
+4. A test notification arrives. Buy signals open Pivot's approval card when tapped, where you choose **Approve** or **Reject**.
+
+**Android:** open Pivot in Chrome → **Settings → Pivot app notifications → Turn on**. Buy signals have **Approve / Reject** buttons right in the notification.
+
+You get the 8:00 am Kite login reminder, buy signals, fills, stops, partial profits, and the morning and evening reports. Choose which ones under **Settings → What to notify me about**.
+
 ---
 
 ## Your daily routine

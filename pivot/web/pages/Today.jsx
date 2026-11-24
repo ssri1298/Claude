@@ -34,6 +34,15 @@ export default function Today() {
 
       {d.demo && <DemoBar state={d.demoState} />}
       {!d.kite.connected && <LoginCard configured={d.kite.configured} />}
+      {!d.demo && !d.push?.devices && !d.telegram.paired && (
+        <Card className="p-5 flex flex-col sm:flex-row sm:items-center gap-4" onClick={() => go('/settings')}>
+          <span className="h-12 w-12 shrink-0 rounded-2xl bg-mint-soft text-mint flex items-center justify-center text-[24px]">🔔</span>
+          <div className="flex-1">
+            <div className="text-[18px] font-bold">Turn on notifications</div>
+            <div className="text-ink2 text-[15px]">So you never miss a buy signal waiting for your approval. Settings → Pivot app notifications.</div>
+          </div>
+        </Card>
+      )}
 
       {d.approvals.length > 0 && (
         <Section title="Needs your decision" subtitle="The agents found a breakout and are waiting for you">

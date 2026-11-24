@@ -11,6 +11,7 @@ import { DemoFeed } from './demo/demoFeed.js';
 import { Telegram } from './notify/telegram.js';
 import { Parent } from './agents/parent.js';
 import { startQuotePusher } from './core/quotes.js';
+import { WebPush, toPlain } from './notify/webpush.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -135,8 +136,19 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
   };
   ctx.reconfigureTelegram();
 
+  ctx.webpush = new WebPush({ db, publicUrl: ctx.publicUrl, log: (m, l) => ctx.bus.log('Parent', m, { level: l }) });
+
+  /** Send to every channel you've set up: Pivot app notifications and/or Telegram. */
   ctx.notify = async (type, text, buttons) => {
     if (type !== 'login' && ctx.settings.notify?.[type] === false) return null;
+    const flat = (buttons || []).flat();
+    const approvalId = Number(flat.find((b) => b.callback_data?.startsWith('approve:'))?.callback_data.split(':')[1]) || null;
+    const link = flat.find((b) => b.url)?.url;
+    const url = type === 'login' ? '/api/kite/login' : approvalId ? '/#/' : ['fills', 'exits'].includes(type) ? '/#/trades' : link?.startsWith(ctx.publicUrl || '\0') ? link.slice(ctx.publicUrl.length) || '/' : '/';
+    const { title, body } = toPlain(text);
+    ctx.webpush
+      .send({ title, body, url, tag: approvalId ? `approval-${approvalId}` : type, approvalId, urgent: !!approvalId || type === 'exits' || type === 'login' })
+      .catch(() => {});
     return ctx.telegram?.send(text, buttons);
   };
 

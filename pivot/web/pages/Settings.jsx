@@ -92,9 +92,10 @@ export default function Settings({ query }) {
       </Group>
 
       {!data.demo && <ZerodhaGroup data={data} reload={reload} />}
+      <PushGroup />
       <TelegramGroup data={data} reload={reload} />
 
-      <Group title="Notifications (Telegram)">
+      <Group title="What to notify me about">
         {[
           ['proposals', 'Trade approvals'],
           ['fills', 'Buys filled'],
@@ -286,7 +287,7 @@ function TelegramGroup({ data, reload }) {
     }
   };
   return (
-    <Group title="Telegram" footer="Approvals arrive as a message with Approve / Reject buttons, even when the app is closed.">
+    <Group title="Telegram (optional)" footer="Not needed if Pivot app notifications are on. Telegram adds Approve / Reject buttons inside the chat.">
       <Row
         icon={Send}
         iconTone="sky"
@@ -311,6 +312,127 @@ function TelegramGroup({ data, reload }) {
         </Button>
         {msg && <div className="font-semibold">{msg}</div>}
       </div>
+    </Group>
+  );
+}
+
+const b64ToBytes = (s) => {
+  const pad = '='.repeat((4 - (s.length % 4)) % 4);
+  const raw = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+};
+const deviceName = () => {
+  const ua = navigator.userAgent;
+  return /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android phone' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows PC' : 'This device';
+};
+
+function PushGroup() {
+  const [state, setState] = useState('checking'); // checking | unsupported | needs-home-screen | off | on | denied
+  const [devices, setDevices] = useState([]);
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const isIOS = /iPhone|iPad/.test(navigator.userAgent);
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+  const refresh = async () => {
+    try {
+      const k = await api('/push/key');
+      setDevices(k.devices);
+    } catch {
+      /* ignore */
+    }
+    if (isIOS && !standalone) return setState('needs-home-screen');
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return setState('unsupported');
+    if (Notification.permission === 'denied') return setState('denied');
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && (await reg.pushManager.getSubscription());
+    setState(sub ? 'on' : 'off');
+  };
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const turnOn = async () => {
+    setBusy(true);
+    setMsg('');
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        setState(perm === 'denied' ? 'denied' : 'off');
+        return;
+      }
+      if (!(await navigator.serviceWorker.getRegistration())) await navigator.serviceWorker.register('/sw.js');
+      const reg = await navigator.serviceWorker.ready;
+      const { key } = await api('/push/key');
+      const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) }));
+      await api('/push/subscribe', { method: 'POST', body: { subscription: sub.toJSON(), device: deviceName() } });
+      await api('/push/test', { method: 'POST' });
+      setMsg('✓ Notifications are on — a test notification is on its way.');
+      refresh();
+    } catch (e) {
+      setMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const turnOff = async () => {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && (await reg.pushManager.getSubscription());
+    if (sub) {
+      await api('/push/unsubscribe', { method: 'POST', body: { endpoint: sub.endpoint } });
+      await sub.unsubscribe();
+    }
+    refresh();
+  };
+  const test = async () => {
+    try {
+      await api('/push/test', { method: 'POST' });
+      setMsg('✓ Test sent.');
+    } catch (e) {
+      setMsg(e.message);
+    }
+  };
+
+  const title = { on: 'On for this device', off: 'Off on this device', denied: 'Blocked on this device', 'needs-home-screen': 'Add Pivot to your Home Screen first', unsupported: 'Not supported in this browser', checking: 'Checking…' }[state];
+  return (
+    <Group title="Pivot app notifications" footer={devices.length ? `Sending to ${devices.length} device${devices.length > 1 ? 's' : ''}: ${devices.map((d) => d.device).join(', ')}.` : 'Buy signals, fills, stops, the morning brief and evening report — right on your phone.'}>
+      <Row
+        icon={Bell}
+        iconTone="mint"
+        title={title}
+        subtitle={state === 'on' ? (isIOS ? 'Tap a buy signal to open Pivot and Approve / Reject.' : 'Buy signals have Approve / Reject buttons.') : undefined}
+        right={
+          state === 'on' ? (
+            <div className="flex gap-2">
+              <Button size="sm" tone="soft" onClick={test}>
+                Test
+              </Button>
+              <Button size="sm" tone="ghost" onClick={turnOff}>
+                Turn off
+              </Button>
+            </div>
+          ) : state === 'off' ? (
+            <Button size="sm" onClick={turnOn} loading={busy}>
+              Turn on
+            </Button>
+          ) : null
+        }
+      />
+      {state === 'needs-home-screen' && (
+        <div className="px-5 py-4 text-[16px] space-y-1.5">
+          <div>iPhone only allows notifications from apps on your Home Screen:</div>
+          <div>1. In Safari, tap the <b>Share</b> button (square with an arrow).</div>
+          <div>2. Tap <b>Add to Home Screen</b> → <b>Add</b>.</div>
+          <div>3. Open <b>Pivot from the new icon</b>, come back to Settings, and tap <b>Turn on</b>.</div>
+          <div className="text-ink2 text-[14px]">Needs iOS 16.4 or newer (Settings → General → About → iOS Version).</div>
+        </div>
+      )}
+      {state === 'denied' && (
+        <div className="px-5 py-4 text-[16px]">
+          Notifications were blocked. {isIOS ? <>Open iPhone <b>Settings → Notifications → Pivot</b> and switch on <b>Allow Notifications</b>, then reopen Pivot.</> : <>Allow notifications for this site in your browser’s site settings, then reload.</>}
+        </div>
+      )}
+      {msg && <div className="px-5 pb-4 font-semibold">{msg}</div>}
     </Group>
   );
 }

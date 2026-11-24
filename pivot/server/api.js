@@ -120,6 +120,7 @@ export function mountApi(app, ctx, auth, { dbFile }) {
         asOf: ctx.asOf,
         kite: { configured: !!ctx.secrets.kiteApiKey, connected: ctx.demo || !!ctx.kiteSession.connected, userName: ctx.kiteSession.userName, demo: ctx.demo },
         telegram: { configured: !!ctx.secrets.telegramToken, paired: !!ctx.secrets.telegramChatId, ok: !!ctx.telegram?.ok, bot: ctx.telegram?.botName },
+        push: { devices: ctx.webpush.subs().length },
         capital,
         today: { realized: round(todayClosed.reduce((s, x) => s + x.realized, 0)), dayChange: round(dayChange), trades: todayFills.length },
         agents: agentsView(ctx),
@@ -175,6 +176,27 @@ export function mountApi(app, ctx, auth, { dbFile }) {
     }),
   );
 
+  // ---------------------------------------------------------- Pivot app notifications (Web Push)
+  app.get('/api/push/key', wrap(() => ({ key: ctx.webpush.publicKey, devices: ctx.webpush.subs().map((s) => ({ device: s.device, added: s.added })) })));
+  app.post(
+    '/api/push/subscribe',
+    wrap((req) => {
+      const sub = req.body?.subscription;
+      if (!sub?.endpoint || !sub?.keys?.p256dh) throw Object.assign(new Error('Invalid subscription'), { status: 400 });
+      const n = ctx.webpush.add(sub, req.body.device);
+      ctx.bus.log('Parent', `Notifications turned on for ${req.body.device || 'a device'}`, { level: 'success' });
+      return { ok: true, devices: n };
+    }),
+  );
+  app.post('/api/push/unsubscribe', wrap((req) => (ctx.webpush.remove(req.body?.endpoint), { ok: true })));
+  app.post(
+    '/api/push/test',
+    wrap(async () => {
+      const n = await ctx.webpush.send({ title: '🔔 Pivot notifications work', body: 'You will get trade approvals, fills, stops and daily reports here.', url: '/', tag: 'test' });
+      if (!n) throw Object.assign(new Error('No device received it — turn notifications on first'), { status: 400 });
+      return { ok: true, sent: n };
+    }),
+  );
   app.get(
     '/api/quotes',
     wrap(() => ({ t: Date.now(), index: indexSnapshot(ctx), q: stockSnapshot(ctx), phase: ctx.parent.phase, demo: ctx.demo })),
