@@ -1,7 +1,8 @@
 // Telegram bot: sends alerts and receives Approve / Reject button taps (long polling, no webhook needed).
 
 export class Telegram {
-  constructor({ token, chatId, onCallback, onCommand, onPair, log }) {
+  constructor({ token, chatId, onCallback, onCommand, onPair, log, getPairCode }) {
+    this.getPairCode = getPairCode;
     this.token = token;
     this.chatId = chatId;
     this.onCallback = onCallback;
@@ -78,16 +79,25 @@ export class Telegram {
     const m = u.message;
     if (!m?.text) return;
     const text = m.text.trim();
-    if (text.startsWith('/start')) {
-      const code = text.split(/\s+/)[1];
-      if (!this.chatId && this.pairCode && code === this.pairCode) {
+    const digits = text.match(/^(?:\/start\s+)?(\d{6})$/)?.[1];
+    if (text.startsWith('/start') || digits) {
+      const code = digits || text.split(/\s+/)[1];
+      const expected = this.getPairCode?.() || this.pairCode;
+      this.log(`Telegram: received "${text.slice(0, 20)}" from chat ${m.chat.id}`);
+      if (!this.chatId && expected && code === expected) {
         this.chatId = String(m.chat.id);
         this.onPair?.(this.chatId);
         await this.send('✅ <b>Pivot is connected.</b>\nYou will get trade approvals, fills and daily reports here.\n\nCommands: /status /positions /picks /pause /resume');
       } else if (String(m.chat.id) === String(this.chatId)) {
         await this.send('👋 Pivot is already connected to this chat.');
+      } else if (this.chatId) {
+        await this.api('sendMessage', { chat_id: m.chat.id, text: 'This bot is already connected to another chat.' });
+      } else if (expected && !code) {
+        await this.api('sendMessage', { chat_id: m.chat.id, text: '👋 Hi! Now send me the 6-digit code shown in Pivot → Settings → Telegram.' });
+      } else if (!expected) {
+        await this.api('sendMessage', { chat_id: m.chat.id, text: '👋 Almost there! In Pivot, open Settings → Telegram and tap “Pair”. Then send me the 6-digit code it shows.' });
       } else {
-        await this.api('sendMessage', { chat_id: m.chat.id, text: 'This bot is private. Open Pivot → Settings → Telegram to get your pairing code.' });
+        await this.api('sendMessage', { chat_id: m.chat.id, text: '❌ That code does not match. Send the 6-digit code currently shown in Pivot → Settings → Telegram (tap “Pair” again for a new one).' });
       }
       return;
     }

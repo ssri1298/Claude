@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ShieldCheck, Wallet, Target, Repeat, KeyRound, Send, Bell, Palette, Database, LogOut, Copy, Check, CalendarOff, Zap, TrendingUp } from 'lucide-react';
 import { api, useApi, applyTheme, getTheme } from '../lib.js';
 import { LargeTitle, List, Row, Toggle, Segmented, NumberField, TextField, Button, Spinner, Sheet, Pill } from '../components/ui.jsx';
@@ -250,6 +250,11 @@ function TelegramGroup({ data, reload }) {
   const [code, setCode] = useState(null);
   const [msg, setMsg] = useState('');
   const t = data.telegram;
+  useEffect(() => {
+    if (!code || t.paired) return;
+    const i = setInterval(reload, 3000); // notice the pairing automatically
+    return () => clearInterval(i);
+  }, [code, t.paired]);
   const saveToken = async () => {
     await api('/secrets', { method: 'PUT', body: { telegramToken: token } });
     setToken('');
@@ -281,8 +286,9 @@ function TelegramGroup({ data, reload }) {
       />
       {code && !t.paired && (
         <div className="px-5 py-4 text-[17px]">
-          Open <b>@{code.bot}</b> in Telegram and send:
-          <CopyText text={`/start ${code.code}`} />
+          Open <b>@{code.bot}</b> in Telegram, tap <b>Start</b>, then send this code:
+          <CopyText text={code.code} />
+          <div className="text-ink2 text-[14px] mt-1">This page turns to “Connected” by itself within a few seconds.</div>
           <Button size="sm" tone="ghost" className="mt-2" onClick={reload}>
             I’ve sent it
           </Button>

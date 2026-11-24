@@ -114,7 +114,12 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
       token: ctx.secrets.telegramToken,
       chatId: ctx.secrets.telegramChatId,
       log: (m, l) => ctx.bus.log('Parent', m, { level: l }),
+      getPairCode: () => {
+        const p = db.kvGet('telegramPair');
+        return p && p.exp > Date.now() ? p.code : null;
+      },
       onPair: (chatId) => {
+        db.kvSet('telegramPair', null);
         ctx.secrets = saveSecrets(db, { telegramChatId: chatId });
         ctx.bus.log('Parent', 'Telegram connected', { level: 'success' });
         ctx.bus.push('settings', {});

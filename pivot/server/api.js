@@ -256,7 +256,6 @@ export function mountApi(app, ctx, auth, { dbFile }) {
       secrets: maskSecrets(ctx.secrets),
       publicUrl: ctx.publicUrl || `${req.protocol}://${req.get('host')}`,
       kiteRedirect: `${ctx.publicUrl || `${req.protocol}://${req.get('host')}`}/api/kite/callback`,
-      pairCode: ctx.telegram?.pairCode || null,
       telegram: { ok: !!ctx.telegram?.ok, bot: ctx.telegram?.botName, paired: !!ctx.secrets.telegramChatId },
       kite: { connected: !!ctx.kiteSession.connected, userName: ctx.kiteSession.userName },
       universeCount: db.get('SELECT COUNT(*) AS n FROM universe WHERE active = 1').n,
@@ -291,8 +290,10 @@ export function mountApi(app, ctx, auth, { dbFile }) {
     '/api/telegram/pair',
     wrap(() => {
       if (!ctx.telegram?.enabled) throw Object.assign(new Error('Add your bot token first'), { status: 400 });
-      ctx.telegram.pairCode = String(randomInt(100000, 999999));
-      return { code: ctx.telegram.pairCode, bot: ctx.telegram.botName };
+      const code = String(randomInt(100000, 999999));
+      db.kvSet('telegramPair', { code, exp: Date.now() + 30 * 60000 }); // valid 30 minutes, survives restarts
+      if (!ctx.telegram.ok) throw Object.assign(new Error('Telegram did not accept the bot token — copy it again from @BotFather and tap Save token'), { status: 400 });
+      return { code, bot: ctx.telegram.botName };
     }),
   );
   app.post(
