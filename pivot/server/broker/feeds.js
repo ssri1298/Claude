@@ -26,7 +26,7 @@ export async function fetchNifty500() {
       lastErr = e;
     }
   }
-  throw new Error(`Could not download the Nifty 500 list (${lastErr?.message})`);
+  throw new Error(`Could not download the Nifty 500 list from NSE (${lastErr?.message}). Upload it in Settings → Data.`);
 }
 
 export function parseNifty500Csv(text) {
@@ -57,13 +57,16 @@ export class KiteFeed extends EventEmitter {
     try {
       list = await fetchNifty500();
     } catch (e) {
-      if (cached.length) {
-        this.log?.('Could not refresh the Nifty 500 list — using the saved list', 'warn');
-        return cached;
-      }
+      // NSE sites sometimes block servers outside India: fall back to an uploaded list, then the saved one
       const manual = this.db.kvGet('nifty500Manual');
-      if (manual) list = parseNifty500Csv(manual);
-      else throw e;
+      const manualAt = this.db.kvGet('nifty500ManualAt') || 0;
+      if (manual && (!cached.length || manualAt > (fetchedAt || 0))) {
+        list = parseNifty500Csv(manual);
+        this.log?.(`Using the Nifty 500 list you uploaded (${list.length} stocks)`);
+      } else if (cached.length) {
+        this.log?.('Could not refresh the Nifty 500 list from NSE — using the saved list. You can upload a fresh one in Settings → Data.', 'warn');
+        return cached;
+      } else throw e;
     }
     const inst = await this.kite.instruments('NSE');
     const bySym = new Map(inst.filter((i) => i.segment === 'NSE' && i.instrument_type === 'EQ').map((i) => [i.tradingsymbol, i]));

@@ -115,6 +115,7 @@ export default function Settings({ query }) {
 
       <Group title="Data">
         <Row icon={Database} iconTone="sky" title="Stocks tracked" subtitle={`Nifty 500 list · history from ${data.historyFrom || '—'}`} right={<b className="num">{data.universeCount}</b>} />
+        {!data.demo && <UploadNifty500 />}
         {data.demo && (
           <Row
             title="Restart the demo"
@@ -295,6 +296,40 @@ function TelegramGroup({ data, reload }) {
         {msg && <div className="font-semibold">{msg}</div>}
       </div>
     </Group>
+  );
+}
+
+function UploadNifty500() {
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const onFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setBusy(true);
+    setMsg('');
+    try {
+      const r = await api('/universe/manual', { method: 'PUT', body: { csv: await f.text() } });
+      setMsg(`✓ ${r.count} stocks saved. Tap “Re-scan” on the Agents page to use them now.`);
+    } catch (err) {
+      setMsg(err.message);
+    } finally {
+      setBusy(false);
+      e.target.value = '';
+    }
+  };
+  return (
+    <Row title="Upload the Nifty 500 list" subtitle="Only needed if NSE blocks your server. Download the CSV on your phone or computer, then upload it here.">
+      <div className="flex flex-wrap items-center gap-2 mt-2">
+        <a href="https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv" target="_blank" rel="noreferrer" className="text-accent font-semibold text-[15px]">
+          1. Download from NSE
+        </a>
+        <label className={`inline-flex items-center h-10 px-4 rounded-full bg-lav-soft text-lav font-semibold text-[15px] cursor-pointer ${busy ? 'opacity-50' : ''}`}>
+          2. Upload CSV
+          <input type="file" accept=".csv,text/csv" className="hidden" onChange={onFile} disabled={busy} />
+        </label>
+      </div>
+      {msg && <div className="mt-2 text-[15px] font-semibold">{msg}</div>}
+    </Row>
   );
 }
 

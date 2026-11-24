@@ -317,7 +317,9 @@ export function mountApi(app, ctx, auth, { dbFile }) {
       const rows = parseNifty500Csv(String(req.body.csv || ''));
       if (rows.length < 50) throw Object.assign(new Error('That does not look like the Nifty 500 CSV (need columns Company Name, Industry, Symbol)'), { status: 400 });
       db.kvSet('nifty500Manual', req.body.csv);
+      db.kvSet('nifty500ManualAt', Date.now());
       db.kvSet('universeFetchedAt', 0);
+      ctx.bus.log('Screener', `You uploaded a Nifty 500 list with ${rows.length} stocks — it will be used from the next scan`, { level: 'success' });
       return { ok: true, count: rows.length };
     }),
   );
