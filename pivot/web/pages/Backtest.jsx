@@ -131,8 +131,8 @@ export default function Backtest() {
           <Row title="Re-entry after stop-out" right={<Segmented size="sm" value={p.reentry ? 'on' : 'off'} onChange={(v) => set('reentry')(v === 'on')} options={['on', 'off']} />} />
           <Row title="Breakout confirmation" subtitle={p.precision === '15m' ? '15-min close above the pivot, VWAP, range position, gap rule' : 'Daily data: strong close above the pivot, bought at the close'} right={<Segmented size="sm" value={p.confirm ? 'on' : 'off'} onChange={(v) => set('confirm')(v === 'on')} options={['on', 'off']} />} />
           <Row title="Two-stage buy" subtitle={p.precision === '15m' ? 'Half at the breakout, rest at 15:15 if it holds' : 'Half at the breakout, rest at the close if it holds'} right={<Segmented size="sm" value={p.twoStage ? 'on' : 'off'} onChange={(v) => set('twoStage')(v === 'on')} options={['on', 'off']} />} />
-          <Row title="Sell failed breakouts" subtitle="Close back below the pivot" right={<Segmented size="sm" value={p.failedExit ? 'on' : 'off'} onChange={(v) => set('failedExit')(v === 'on')} options={['on', 'off']} />
-          <Row title="Time exit" subtitle={`No stop and no +10% after ${settings.data?.settings.rules.timeExit?.days || 7} trading days → sell`} right={<Segmented size="sm" value={p.timeExit ? 'on' : 'off'} onChange={(v) => set('timeExit')(v === 'on')} options={['on', 'off']} />} />} />
+          <Row title="Sell failed breakouts" subtitle="Close back below the pivot" right={<Segmented size="sm" value={p.failedExit ? 'on' : 'off'} onChange={(v) => set('failedExit')(v === 'on')} options={['on', 'off']} />} />
+          <Row title="Time exit" subtitle={`No stop and no +10% after ${settings.data?.settings.rules.timeExit?.days || 7} trading days → sell`} right={<Segmented size="sm" value={p.timeExit ? 'on' : 'off'} onChange={(v) => set('timeExit')(v === 'on')} options={['on', 'off']} />} />
           <div className="p-4 flex flex-wrap gap-3">
             <Button icon={Play} onClick={run} loading={job?.status === 'running'} size="lg">
               Run backtest
