@@ -166,3 +166,32 @@ test('backtest runs end-to-end on a synthetic market', () => {
     assert.ok(t.qtyInitial * t.entryPrice <= 500000 * 0.11 * (1 + r.stats.totalReturnPct / 100) + 1000, 'position ≈ 10% of capital');
   }
 });
+
+test('15-minute backtest replays candle by candle with no look-ahead', async () => {
+  const { findBreakoutDays, runBacktest15 } = await import('../server/engine/backtest15.js');
+  const { bars15FromDaily } = await import('../server/demo/demoFeed.js');
+  const { rng } = await import('../server/demo/synth.js');
+  const m = generateMarket({ seed: 3, stocks: 60, days: 520 });
+  const from = m.dates[260];
+  const scan = findBreakoutDays({ stocks: m.stocks, index: m.index, from });
+  assert.ok(scan.candidateDays > 0 && scan.ranges.length > 0);
+  const byTok = new Map(m.stocks.map((s) => [s.token, s]));
+  const getBars = (token, date) => {
+    if (!scan.ranges.some((r) => r.token === token && date >= r.from && date <= r.to)) return [];
+    const di = m.dates.indexOf(date);
+    return bars15FromDaily(byTok.get(token).candles[di], rng(token * 7919 + di));
+  };
+  const r = runBacktest15({ stocks: m.stocks, index: m.index, from, getBars });
+  assert.ok(r.stats.trades >= 1);
+  assert.equal(r.coverage.entryPct, 100, 'every breakout day had 15-minute candles');
+  for (const t of r.trades) {
+    assert.match(t.entryTime, /^\d\d:\d\d$/);
+    // the buy is the close of a candle that closed above the pivot (plus slippage)
+    const bars = getBars(byTok.get(m.stocks.find((s) => s.symbol === t.symbol).token) && m.stocks.find((s) => s.symbol === t.symbol).token, t.entryDate);
+    const bar = bars.find((b) => b.time === t.entryTime);
+    assert.ok(bar && bar.close > t.pivot, 'entry candle closed above the pivot');
+    assert.ok(Math.abs(t.entryPrice - bar.close * 1.001) < 0.06, 'filled at that candle close');
+    assert.ok(t.rMultiple > -1.6, `loss limited by the stop (${t.rMultiple}R)`);
+    if (t.exitDate === t.entryDate) assert.ok(t.exitTime > t.entryTime, 'same-day exit happens after the entry candle');
+  }
+});

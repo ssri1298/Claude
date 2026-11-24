@@ -42,6 +42,18 @@ export class DemoFeed extends EventEmitter {
     return s.candles.filter((c) => c.date >= from && c.date <= to && c.date <= until);
   }
 
+  /** Deterministic 15-minute candles for the simulated market (same day → same candles every time). */
+  async history15(token, from, to) {
+    const s = this.byToken.get(token);
+    const until = this.visibleUntil();
+    const out = [];
+    this.market.dates.forEach((date, di) => {
+      if (date < from || date > to || date > until) return;
+      out.push(...bars15FromDaily(s.candles[di], rng(token * 7919 + di)));
+    });
+    return out;
+  }
+
   async indexHistory(from, to) {
     const until = this.visibleUntil();
     return this.market.index.filter((c) => c.date >= from && c.date <= to && c.date <= until);
@@ -113,4 +125,29 @@ function prevDate(dates, date) {
     else break;
   }
   return lo;
+}
+
+/** Split one daily candle into 25 fifteen-minute candles that match its open/high/low/close/volume. */
+export function bars15FromDaily(candle, r) {
+  const p = intradayPath(r, candle, (m) => volumeFraction(m));
+  const bars = [];
+  for (let b = 0; b < 25; b++) {
+    const seg = p.prices.slice(b * 15, b * 15 + 16);
+    const mins = 555 + b * 15;
+    bars.push({
+      date: candle.date,
+      time: `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`,
+      open: seg[0],
+      high: Math.max(...seg),
+      low: Math.min(...seg),
+      close: seg[seg.length - 1],
+      volume: Math.max(0, p.cumVol[Math.min(375, (b + 1) * 15)] - p.cumVol[b * 15]),
+    });
+  }
+  // make the candles reproduce the day's exact high and low
+  const hi = bars.reduce((a, b) => (b.high > a.high ? b : a));
+  const lo = bars.reduce((a, b) => (b.low < a.low ? b : a));
+  hi.high = candle.high;
+  lo.low = candle.low;
+  return bars;
 }

@@ -64,6 +64,16 @@ CREATE TABLE IF NOT EXISTS equity (
   date TEXT, kind TEXT, equity REAL, cash REAL, invested REAL, open_pnl REAL, PRIMARY KEY (date, kind)
 );
 
+CREATE TABLE IF NOT EXISTS candles15 (
+  token INTEGER, date TEXT, time TEXT, open REAL, high REAL, low REAL, close REAL, volume INTEGER,
+  PRIMARY KEY (token, date, time)
+);
+
+CREATE TABLE IF NOT EXISTS candles15_ranges (
+  token INTEGER, from_date TEXT, to_date TEXT, fetched TEXT
+);
+CREATE INDEX IF NOT EXISTS c15r_token ON candles15_ranges(token);
+
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, agent TEXT, level TEXT, message TEXT, data TEXT
 );
@@ -72,7 +82,7 @@ CREATE TABLE IF NOT EXISTS events (
 export function openDb(file) {
   if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 10000;');
   db.exec(SCHEMA);
   const stmtCache = new Map();
   const prep = (sql) => {

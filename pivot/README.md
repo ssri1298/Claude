@@ -30,7 +30,12 @@ A self-hosted web app (mobile-first PWA, light/dark) that runs Mark Minervini–
 | `web/` | React + Tailwind UI (Today, Scanner, Stock, Trades, Dashboard, Backtest, Agents, Settings) |
 | `deploy/` | `install.sh` (Ubuntu + Node 22 + Caddy HTTPS + systemd), `update.sh` |
 
-The backtester replays the **same** engine functions the live agents use, so a backtest measures the live strategy.
+The backtester replays the **same** engine functions the live agents use, so a backtest measures the live strategy. It has two precisions:
+- **Daily**: fast, one candle per day.
+- **15-minute** (`server/engine/backtest15.js`):
+  1. A daily pass finds breakout days.
+  2. 15-minute candles for those days plus ~90 trading days are downloaded from Kite and cached in `candles15`.
+  3. The replay walks every candle. Entries trigger on a candle closing above the pivot with volume on pace and fill at that close. Stop, partial and trailing are resolved inside each candle; days without 15-minute data fall back to daily candles, and that coverage is reported.
 
 ### VCP detection (short version)
 Base start = highest high in the last ~250 days (cup-with-handle aware). A swing scan splits the base into contractions: after each low, a rally that recovers ≥50% and is followed by a ≥3% pullback starts the next contraction. Lower lows merge into the left side. Valid when there are 2–6 contractions, each ≤1.15× the previous one, the last one ≤12%, base ≤40% deep, lows rising, and a prior advance of ≥25%. **Pivot** = high of the last contraction. **Stop** = its low −0.5%.

@@ -96,6 +96,18 @@ export class KiteFeed extends EventEmitter {
     return this.kite.historical(token, from, to, 'day');
   }
 
+  /** 15-minute candles (Kite allows up to 200 days per request). */
+  async history15(token, from, to) {
+    const out = [];
+    let start = from;
+    while (start <= to) {
+      const end = addDaysIso(start, 190) < to ? addDaysIso(start, 190) : to;
+      out.push(...(await this.kite.historical(token, start, end, '15minute')));
+      start = addDaysIso(end, 1);
+    }
+    return out;
+  }
+
   indexHistory(from, to) {
     return this.kite.historical(NIFTY50_TOKEN, from, to, 'day');
   }
@@ -125,4 +137,10 @@ export class KiteFeed extends EventEmitter {
   status() {
     return { connected: !!this.ticker?.connected, lastTick: this.lastTick };
   }
+}
+
+function addDaysIso(date, n) {
+  const d = new Date(date + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }

@@ -112,7 +112,7 @@ export class KiteClient {
   }
   async historical(token, from, to, interval = 'day') {
     const data = await this.request('GET', `/instruments/historical/${token}/${interval}`, { from: `${from} 00:00:00`, to: `${to} 23:59:59` }, { limiter: 'historical' });
-    return (data.candles || []).map(([ts, o, h, l, c, v]) => ({ date: String(ts).slice(0, 10), open: o, high: h, low: l, close: c, volume: v || 0 }));
+    return (data.candles || []).map(([ts, o, h, l, c, v]) => ({ date: String(ts).slice(0, 10), time: String(ts).slice(11, 16), open: o, high: h, low: l, close: c, volume: v || 0 }));
   }
   placeOrder(p) {
     // p: { tradingsymbol, exchange, transaction_type, quantity, order_type, price, product, validity, tag }

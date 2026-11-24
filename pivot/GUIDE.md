@@ -126,7 +126,7 @@ You get the 8:00 am Kite login reminder, buy signals, fills, stops, partial prof
 ## Going live (when you're ready)
 
 1. Paper-trade for at least 3–4 weeks. On the **Dashboard**, check the win rate, average win vs average loss, and whether grade A/A+ trades beat grade B.
-2. Run a **Backtest**: first tap **Get 5 years of data**, wait a few minutes, then **Run backtest**.
+2. Run a **Backtest**: first tap **Get 5 years of data** and wait a few minutes. Then choose **15-minute candles** and tap **Run backtest**. The first run downloads 15-minute candles from Zerodha for every breakout, which takes a few minutes per year tested. Later runs reuse them and are quick. The 15-minute replay checks every candle, so it knows whether the stop or the +10% target came first in a day.
 3. **Settings → Trading mode → Live.** Keep **Ask me before every buy** on. Later, if you want fully automatic trading, switch that off.
 
 ## If something goes wrong
