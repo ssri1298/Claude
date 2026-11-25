@@ -196,7 +196,7 @@ function Results({ r }) {
                   {t.symbol} {t.reentry && <span className="text-sky text-[13px]">re-entry</span>}
                 </div>
                 <div className="text-ink2 text-[14px] num">
-                  {niceDate(t.entryDate)} {t.entryTime || ''} {price(t.entryPrice)} → {niceDate(t.exitDate)} {t.exitTime || ''} · {t.days}d · {{ stop: 'stop-loss', trail: 'trailing exit', partial: 'partial', failed: 'failed breakout', time: 'time exit' }[t.reason] || t.reason} · {t.r}R
+                  {niceDate(t.entryDate)} {t.entryTime || ''} {price(t.entryPrice)} → {niceDate(t.exitDate)} {t.exitTime || ''} · {t.days}d · {{ stop: 'stop-loss', trail: 'trailing exit', partial: 'partial', failed: 'failed breakout', time: 'time exit', climax: 'climax sale' }[t.reason] || t.reason} · {t.r}R
                 </div>
               </div>
               <div className="text-right">

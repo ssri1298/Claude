@@ -18,7 +18,7 @@
 
 import { prepareUniverse, analyzeUniverse } from './analyze.js';
 import { scoreSetup } from './scoring.js';
-import { DEFAULT_RULES, mergeRules, computeStop, positionSize, capacityCheck, managePosition, deliveryCharges, rMultiple } from './rules.js';
+import { DEFAULT_RULES, mergeRules, winnerState, computeStop, positionSize, capacityCheck, managePosition, deliveryCharges, rMultiple } from './rules.js';
 import { volumeFraction } from './market.js';
 import { evaluateChecks } from './confirm.js';
 import { computeStats } from './stats.js';
@@ -148,11 +148,24 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
     if (isLast && R.timeExit?.enabled && pos.qtyOpen > 0 && !pos.partialDone && dates.indexOf(d) - dates.indexOf(pos.entryDate) >= (R.timeExit.days || 7)) {
       return sell(pos, pos.qtyOpen, c * (1 - slip), d, time, 'time');
     }
+    // Big winners: 8-week hold and climax-run sale (at the close)
+    let powerHold = false;
+    if (pos.qtyOpen > 0) {
+      const ei = s.idx.get(pos.entryDate);
+      const closes = s.c.close.slice(ei, i).concat(c);
+      const ws = winnerState({ entryPrice: pos.entryPrice, closes, held: i - ei, powerDate: pos.powerDate, climaxDone: pos.climaxDone, rules: R });
+      powerHold = ws.powerHold;
+      if (isLast && ws.newPower) pos.powerDate = d;
+      if (isLast && ws.climax && pos.qtyOpen >= 2) {
+        pos.climaxDone = true;
+        sell(pos, Math.max(1, Math.floor(pos.qtyOpen * (R.winners.climax.fraction || 0.5))), c * (1 - slip), d, time, 'climax');
+      }
+    }
     if (pos.qtyOpen <= 0 || !pos.partialDone) return;
     let trailLevel = null;
     if (isLast && R.trailMethod === 'ema21') trailLevel = s.m.ema21[i];
     else if (isLast && R.trailMethod === 'sma50') trailLevel = s.m.sma50[i];
-    for (const a of managePosition(pos, c, { isCloseCheck: isLast, trailLevel }, R)) {
+    for (const a of managePosition(pos, c, { isCloseCheck: isLast, trailLevel, powerHold }, R)) {
       if (a.type === 'trail') sell(pos, pos.qtyOpen, c * (1 - slip), d, time, 'trail');
       else if (a.type === 'stop') sell(pos, pos.qtyOpen, Math.min(c, pos.stop) * (1 - slip), d, time, 'stop');
       else if (a.type === 'raiseStop') pos.stop = a.newStop;

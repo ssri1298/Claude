@@ -146,6 +146,7 @@ export default function Settings({ query, section }) {
         <Row title="Skip ASM / GSM stocks" subtitle="NSE surveillance lists — extra margins, trading limits, unreliable breakouts" right={<Toggle checked={!!r.filters?.surveillance} onChange={(v) => save({ rules: { filters: { surveillance: v } } })} />} />
         <Row title="Skip tight circuit bands" subtitle="Non-F&O stocks with a 5% or 10% band — a stop can't sell at the lower circuit" right={<Toggle checked={(r.filters?.minBandPct || 0) > 0} onChange={(v) => save({ rules: { filters: { minBandPct: v ? 20 : 0 } } })} />} />
         <Row title="Minimum daily turnover" subtitle="50-day average of ₹ traded per day — so orders fill near the expected price" right={<NumberField value={r.filters?.minTurnoverCr} onChange={(v) => save({ rules: { filters: { minTurnoverCr: Math.max(0, v) } } })} suffix="₹ cr" width="w-20" />} />
+        <Row title="Only buy in leading sectors" subtitle="Skip stocks whose industry group is in the weaker half (by average relative strength). See Scanner → Sectors." right={<Toggle checked={(r.filters?.minSectorRank || 0) > 0} onChange={(v) => save({ rules: { filters: { minSectorRank: v ? 50 : 0 } } })} />} />
         <FlagsStatus f={data.flags} reload={reload} demo={data.demo} />
       </Group>
       <Group title="Breakout confirmation" footer="The first tick above the pivot only 'arms' a stock. Pivot buys once these checks pass. Every breakout is also tracked from its first tick, so the Dashboard can show which checks really help.">
@@ -204,6 +205,17 @@ export default function Settings({ query, section }) {
         <Row title="Backup stop at Zerodha (GTT)" subtitle="Sells even if the server goes down" right={<Toggle checked={s.backupGtt} onChange={(v) => save({ backupGtt: v })} />} />
       </Group>
 
+      <Group title="Big winners" footer="Minervini's rules for the best trades. The 8-week hold keeps a fast mover through normal pullbacks (only the stop can sell it). The climax sale books part of a stock that suddenly goes vertical — those runs often mark the top.">
+        <Row icon={TrendingUp} iconTone="mint" title="8-week hold for fast movers" subtitle={`Up ${r.winners?.eightWeek?.gainPct}% within ${r.winners?.eightWeek?.withinDays} trading days → no trailing exit for ${r.winners?.eightWeek?.holdDays} trading days`} right={<Toggle checked={!!r.winners?.eightWeek?.enabled} onChange={(v) => save({ rules: { winners: { eightWeek: { enabled: v } } } })} />} />
+        {r.winners?.eightWeek?.enabled && <Row title="Fast move means up" right={<NumberField value={r.winners.eightWeek.gainPct} onChange={(v) => save({ rules: { winners: { eightWeek: { gainPct: Math.max(10, Math.min(50, v)) } } } })} suffix="% in 3 weeks" width="w-20" />} />}
+        <Row title="Sell into a climax run" subtitle={`Up ${r.winners?.climax?.gainPct}% in ${r.winners?.climax?.days} days and today is the biggest up-day since buying`} right={<Toggle checked={!!r.winners?.climax?.enabled} onChange={(v) => save({ rules: { winners: { climax: { enabled: v } } } })} />} />
+        {r.winners?.climax?.enabled && (
+          <>
+            <Row title="Climax means up" right={<NumberField value={r.winners.climax.gainPct} onChange={(v) => save({ rules: { winners: { climax: { gainPct: Math.max(10, Math.min(100, v)) } } } })} suffix="%" width="w-20" />} />
+            <Row title="Sell" right={<NumberField value={Math.round(r.winners.climax.fraction * 100)} onChange={(v) => save({ rules: { winners: { climax: { fraction: Math.max(0.1, Math.min(1, v / 100)) } } } })} suffix="% of what's left" width="w-20" />} />
+          </>
+        )}
+      </Group>
       <Group title="Early exits" footer="A new buy that closes back below its pivot is sold at the close (usually a 1–3% loss instead of the full stop). A trade that goes nowhere ties up capital: the time exit sells it at the close if it has hit neither the stop nor the profit target in time.">
         <Row icon={Timer} iconTone="peach" title="Sell failed breakouts early" subtitle="Close back below the pivot" right={<Toggle checked={r.failedExit.enabled} onChange={(v) => save({ rules: { failedExit: { enabled: v } } })} />} />
         {r.failedExit.enabled && <Row title="Within the first" right={<NumberField value={r.failedExit.days} onChange={(v) => save({ rules: { failedExit: { days: v } } })} suffix="days" width="w-20" />} />}

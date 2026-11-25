@@ -216,6 +216,7 @@ export class Screener {
     const res = analyzeUniverse(prepareUniverse(stocks), { indexCandles: indexCandles.length > 210 ? indexCandles : null });
     this.ctx.analysis = new Map(res.stocks.map((a) => [a.symbol, a]));
     this.ctx.market = res.market || { regime: 'unknown', label: 'Unknown', notes: ['Index history unavailable'] };
+    this.ctx.sectors = res.sectors || [];
     this.ctx.breadth = res.breadth;
     this.ctx.asOf = until;
 

@@ -9,7 +9,7 @@ import { getOverrides } from '../core/overrides.js';
 const inr = (x) => '₹' + Math.round(Number(x) || 0).toLocaleString('en-IN');
 const signedInr = (x) => (x >= 0 ? '+₹' : '−₹') + Math.abs(Math.round(Number(x) || 0)).toLocaleString('en-IN');
 
-const REASON = { stop: 'Stop-loss', trail: 'Trailing exit', manual: 'You sold', outside: 'Sold outside Pivot', partial: '⅓ profit', failed: 'Failed breakout', time: 'Time exit' };
+const REASON = { stop: 'Stop-loss', trail: 'Trailing exit', manual: 'You sold', outside: 'Sold outside Pivot', partial: '⅓ profit', failed: 'Failed breakout', time: 'Time exit', climax: 'Climax sale' };
 
 function marketView(ctx) {
   const m = ctx.market || {};

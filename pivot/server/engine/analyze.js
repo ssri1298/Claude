@@ -105,10 +105,51 @@ export function analyzeUniverse(prepared, { indexCandles, date, vcpOptions } = {
   let market = null;
   if (indexCandles) {
     const ic = date ? indexCandles.filter((c) => c.date <= date) : indexCandles;
-    market = marketRegime(ic, breadth);
+    market = marketRegime(ic, breadth, aggregateVolume(prepared));
   }
+  const sectors = sectorTable(out, indRank);
   out.sort((x, y) => y.score - x.score);
-  return { stocks: out, breadth, market };
+  return { stocks: out, breadth, market, sectors };
+}
+
+/** Combined daily volume of the whole universe (cached on the prepared array). */
+export function aggregateVolume(prepared) {
+  if (prepared._aggVol) return prepared._aggVol;
+  const m = new Map();
+  for (const s of prepared) for (let i = 0; i < s.c.date.length; i++) m.set(s.c.date[i], (m.get(s.c.date[i]) || 0) + (s.c.volume[i] || 0));
+  Object.defineProperty(prepared, '_aggVol', { value: m, enumerable: false });
+  return m;
+}
+
+/** Industry groups ranked by strength: average RS, % of stocks in an uptrend, setups, leaders. */
+export function sectorTable(stocks, indRank) {
+  const g = new Map();
+  for (const a of stocks) {
+    const k = a.industry || 'Other';
+    if (!g.has(k)) g.set(k, { industry: k, count: 0, rsSum: 0, uptrend: 0, above50: 0, setups: 0, top: [] });
+    const x = g.get(k);
+    x.count++;
+    x.rsSum += a.rsRating || 0;
+    if (a.trend?.pass) x.uptrend++;
+    if (a.sma50 && a.close > a.sma50) x.above50++;
+    if (a.trend?.pass && a.vcp?.valid) x.setups++;
+    x.top.push(a);
+  }
+  return [...g.values()]
+    .map((x) => ({
+      industry: x.industry,
+      rank: indRank?.get(x.industry) ?? null,
+      count: x.count,
+      avgRs: Math.round(x.rsSum / x.count),
+      uptrendPct: Math.round((x.uptrend / x.count) * 100),
+      above50Pct: Math.round((x.above50 / x.count) * 100),
+      setups: x.setups,
+      leaders: x.top
+        .sort((p, q) => (q.rsRating || 0) - (p.rsRating || 0))
+        .slice(0, 3)
+        .map((a) => ({ symbol: a.symbol, rs: a.rsRating })),
+    }))
+    .sort((p, q) => (q.rank ?? 0) - (p.rank ?? 0));
 }
 
 /** Average ₹ crore traded per day over the last 50 sessions (liquidity). */

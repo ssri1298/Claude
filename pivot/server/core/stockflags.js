@@ -189,6 +189,7 @@ export function filterBlock(ctx, a, date) {
   if (F.surveillance && fl.surveillance?.[a.symbol]) return { code: 'surveillance', reason: `On NSE's ${fl.surveillance[a.symbol]} surveillance list` };
   const band = fl.bands?.[a.symbol];
   if (F.minBandPct && band && band < F.minBandPct && !fl.fno?.has(a.symbol)) return { code: 'band', reason: `${band}% circuit band — the stop may not fill if it gets stuck at the lower circuit` };
+  if (F.minSectorRank && a.sectorRs != null && a.sectorRs < F.minSectorRank) return { code: 'sector', reason: `${a.industry || 'Its industry'} is a lagging group (strength ${a.sectorRs}/100; you buy only ${F.minSectorRank}+)` };
   if (F.minTurnoverCr && a.turnoverCr != null && a.turnoverCr < F.minTurnoverCr) return { code: 'liquidity', reason: `Only ₹${a.turnoverCr} crore traded per day (your minimum is ₹${F.minTurnoverCr} crore)` };
   return null;
 }

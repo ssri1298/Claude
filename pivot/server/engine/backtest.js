@@ -9,7 +9,7 @@
 
 import { prepareUniverse, analyzeUniverse } from './analyze.js';
 import { scoreSetup } from './scoring.js';
-import { DEFAULT_RULES, mergeRules, computeStop, positionSize, capacityCheck, managePosition, deliveryCharges, rMultiple } from './rules.js';
+import { DEFAULT_RULES, mergeRules, winnerState, computeStop, positionSize, capacityCheck, managePosition, deliveryCharges, rMultiple } from './rules.js';
 import { computeStats } from './stats.js';
 import { round } from './vcp.js';
 import { roundTick } from './indicators.js';
@@ -92,11 +92,20 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
         }
       }
       if (pos.qtyOpen <= 0) continue;
+      // Big winners: 8-week hold and climax-run sale (at the close)
+      const ei = s.idx.get(pos.entryDate);
+      const ws = winnerState({ entryPrice: pos.entryPrice, closes: s.c.close.slice(ei, i + 1), held: i - ei, powerDate: pos.powerDate, climaxDone: pos.climaxDone, rules: R });
+      if (ws.newPower) pos.powerDate = d;
+      if (ws.climax && pos.qtyOpen >= 2) {
+        pos.climaxDone = true;
+        sell(pos, Math.max(1, Math.floor(pos.qtyOpen * (R.winners.climax.fraction || 0.5))), c * (1 - R.slippagePct / 100), d, 'climax');
+      }
+      if (pos.qtyOpen <= 0) continue;
       if (pos.partialDone) {
         let trailLevel = null;
         if (R.trailMethod === 'ema21') trailLevel = s.m.ema21[i];
         else if (R.trailMethod === 'sma50') trailLevel = s.m.sma50[i];
-        const acts = managePosition(pos, c, { isCloseCheck: true, trailLevel }, R);
+        const acts = managePosition(pos, c, { isCloseCheck: true, trailLevel, powerHold: ws.powerHold }, R);
         for (const a of acts) {
           if (a.type === 'trail' || a.type === 'stop') sell(pos, pos.qtyOpen, c * (1 - R.slippagePct / 100), d, a.type === 'trail' ? 'trail' : 'stop');
           else if (a.type === 'raiseStop') pos.stop = a.newStop;

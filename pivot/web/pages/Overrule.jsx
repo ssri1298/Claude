@@ -25,6 +25,7 @@ const WHY = {
   skipped_surveillance: ['ASM / GSM', 'coral'],
   skipped_band: ['Circuit band', 'coral'],
   skipped_liquidity: ['Low turnover', 'gray'],
+  skipped_sector: ['Weak sector', 'gray'],
   rejected: ['You rejected', 'gray'],
   expired: ['Expired', 'gray'],
   ranked: ['Not bought', 'gray'],

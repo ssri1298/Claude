@@ -93,6 +93,12 @@ export function openDb(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 10000;');
   db.exec(SCHEMA);
+  // Columns added after the first release (ignored if they already exist)
+  for (const sql of ['ALTER TABLE positions ADD COLUMN power_date TEXT', 'ALTER TABLE positions ADD COLUMN climax_done INTEGER DEFAULT 0']) {
+    try {
+      db.exec(sql);
+    } catch {}
+  }
   const stmtCache = new Map();
   const prep = (sql) => {
     let s = stmtCache.get(sql);

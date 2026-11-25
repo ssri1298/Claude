@@ -37,6 +37,7 @@ export const DEFAULT_RULES = {
     surveillance: true, // skip stocks on NSE's ASM / GSM surveillance lists
     minBandPct: 20, // skip non-F&O stocks whose circuit band is tighter than this (5% / 10% bands)
     minTurnoverCr: 10, // skip stocks trading less than ₹N crore a day (50-day average)
+    minSectorRank: 0, // 0 = off; e.g. 50 = only buy stocks whose industry group ranks in the top half
   },
   // Selling big winners
   winners: {
@@ -140,8 +141,8 @@ export function managePosition(pos, price, ctx = {}, rules = DEFAULT_RULES) {
     return actions;
   }
 
-  // 3. Trailing for the remainder (only after the partial is booked).
-  if (pos.partialDone && rules.trailMethod !== 'none') {
+  // 3. Trailing for the remainder (only after the partial is booked; paused while the 8-week hold is on).
+  if (pos.partialDone && rules.trailMethod !== 'none' && !ctx.powerHold) {
     if (rules.trailMethod === 'pct10') {
       const hi = Math.max(pos.highest || price, price);
       const trail = roundTick(hi * (1 - rules.trailPct / 100), 0.05, 'down');
@@ -152,6 +153,43 @@ export function managePosition(pos, price, ctx = {}, rules = DEFAULT_RULES) {
     }
   }
   return actions;
+}
+
+/**
+ * Big-winner rules, checked once a day at the close.
+ *  8-week hold: a stock that gains eightWeek.gainPct within eightWeek.withinDays of buying is held for
+ *               holdDays trading days without the trailing exit (the stop still protects it).
+ *  Climax run:  up climax.gainPct within climax.days, with today the biggest up-day since buying
+ *               → sell climax.fraction of what is left into the strength (once per position).
+ * `closes` = daily closes from the entry day to today (inclusive); `held` = trading days since entry.
+ */
+export function winnerState({ entryPrice, closes, held, powerDate, climaxDone, rules = DEFAULT_RULES }) {
+  const W = rules.winners || DEFAULT_RULES.winners;
+  const E = W.eightWeek || {};
+  const C = W.climax || {};
+  let power = !!powerDate;
+  let newPower = false;
+  if (E.enabled && !power && held <= E.withinDays && closes.length && Math.max(...closes) >= entryPrice * (1 + E.gainPct / 100)) {
+    power = true;
+    newPower = true;
+  }
+  const powerHold = !!(E.enabled && power && held <= E.holdDays);
+  let climax = false;
+  let climaxReason = '';
+  const n = closes.length;
+  if (C.enabled && !climaxDone && n >= 3) {
+    const last = closes[n - 1];
+    const base = n - 1 >= C.days ? closes[n - 1 - C.days] : entryPrice;
+    const run = last / base - 1;
+    const day = last / closes[n - 2] - 1;
+    let maxPrev = 0;
+    for (let i = 1; i < n - 1; i++) maxPrev = Math.max(maxPrev, closes[i] / closes[i - 1] - 1);
+    if (run >= C.gainPct / 100 && day > 0 && day >= maxPrev) {
+      climax = true;
+      climaxReason = `Climax run: +${round(run * 100, 1)}% in ${Math.min(C.days, n - 1)} days with the biggest up-day since buying — selling ${Math.round(C.fraction * 100)}% into strength`;
+    }
+  }
+  return { powerHold, newPower, climax, climaxReason };
 }
 
 export function rMultiple(pos, exitPrice) {

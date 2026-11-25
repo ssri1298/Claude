@@ -8,7 +8,9 @@ export default function Scanner({ query }) {
   const [filter, setFilter] = useState(query.filter || 'setups');
   const [q, setQ] = useState('');
   const isWatch = filter === 'watchlist';
-  const { data } = useApi(isWatch ? null : `/scanner?filter=${filter}&q=${encodeURIComponent(q)}`, { interval: 15000, events: ['scan'], enabled: !isWatch });
+  const isSect = filter === 'sectors';
+  const { data } = useApi(isWatch || isSect ? null : `/scanner?filter=${filter}&q=${encodeURIComponent(q)}`, { interval: 15000, events: ['scan'], enabled: !isWatch && !isSect });
+  const sect = useApi(isSect ? '/sectors' : null, { enabled: isSect });
   const watch = useApi(isWatch ? '/watchlist' : null, { enabled: isWatch, events: ['scan'] });
 
   return (
@@ -25,11 +27,12 @@ export default function Scanner({ query }) {
               { value: 'breakouts', label: 'Buy zone' },
               { value: 'trend', label: 'Uptrend' },
               { value: 'watchlist', label: 'Watchlist' },
+              { value: 'sectors', label: 'Sectors' },
               { value: 'all', label: 'All' },
             ]}
           />
         </div>
-        {!isWatch && (
+        {!isWatch && !isSect && (
           <label className="flex items-center gap-2 bg-card rounded-2xl shadow-soft px-4 h-12 sm:ml-auto sm:w-72">
             <Search size={19} className="text-ink3" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search symbol" className="bg-transparent outline-none w-full text-[17px]" />
@@ -37,7 +40,59 @@ export default function Scanner({ query }) {
         )}
       </div>
 
-      {isWatch ? <Watchlist rows={watch.data} /> : !data ? <Spinner /> : data.rows.length === 0 ? <Card><Empty icon={Radar} title="Nothing here right now" text={filter === 'breakouts' ? 'No setup is trading in its buy zone at the moment.' : 'Try another filter.'} /></Card> : <ScanList rows={data.rows} />}
+      {isSect ? <Sectors data={sect.data} /> : isWatch ? <Watchlist rows={watch.data} /> : !data ? <Spinner /> : data.rows.length === 0 ? <Card><Empty icon={Radar} title="Nothing here right now" text={filter === 'breakouts' ? 'No setup is trading in its buy zone at the moment.' : 'Try another filter.'} /></Card> : <ScanList rows={data.rows} />}
+    </div>
+  );
+}
+
+/** Industry groups ranked by strength, with their leading stocks. */
+function Sectors({ data }) {
+  if (!data) return <Spinner />;
+  const m = data.market;
+  return (
+    <div className="space-y-4">
+      {m?.notes?.length > 0 && (
+        <Card className="p-4 sm:p-5">
+          <div className="flex items-center gap-2 font-bold text-[17px]">
+            Market <Pill tone={{ uptrend: 'mint', pressure: 'butter', downtrend: 'coral' }[m.regime] || 'gray'}>{m.label}</Pill>
+          </div>
+          <ul className="mt-2 text-ink2 text-[15px] space-y-0.5">
+            {m.notes.map((n) => (
+              <li key={n}>• {n}</li>
+            ))}
+          </ul>
+        </Card>
+      )}
+      <Card className="divide-y hairline">
+        {data.sectors.map((x, i) => (
+          <div key={x.industry} className="px-4 sm:px-5 py-3.5">
+            <div className="flex items-center gap-3">
+              <span className="w-7 text-ink3 font-bold num shrink-0">{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-[17px] truncate">{x.industry}</div>
+                <div className="text-ink2 text-[13px]">
+                  {x.count} stocks · {x.uptrendPct}% in uptrend · {x.above50Pct}% above 50-DMA{x.setups ? ` · ${x.setups} VCP setup${x.setups === 1 ? '' : 's'}` : ''}
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <div className={`num font-bold text-[18px] ${x.rank >= 70 ? 'text-mint' : x.rank < 35 ? 'text-coral' : ''}`}>{x.rank ?? '—'}</div>
+                <div className="text-ink3 text-[11px]">strength</div>
+              </div>
+            </div>
+            <div className="h-1.5 rounded-full bg-card2 mt-2 ml-10 overflow-hidden">
+              <div className={`h-full rounded-full ${x.rank >= 70 ? 'bg-mint' : x.rank < 35 ? 'bg-coral' : 'bg-lav'}`} style={{ width: `${x.rank || 0}%` }} />
+            </div>
+            <div className="ml-10 mt-1.5 flex flex-wrap gap-x-3 text-[13px]">
+              <span className="text-ink3">Leaders:</span>
+              {x.leaders.map((l) => (
+                <button key={l.symbol} onClick={() => go(`/stock/${encodeURIComponent(l.symbol)}`)} className="text-accent font-semibold">
+                  {l.symbol} <span className="text-ink3 font-normal">RS {l.rs}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </Card>
     </div>
   );
 }

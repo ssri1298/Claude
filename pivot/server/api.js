@@ -649,6 +649,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
     shadow: db.get("SELECT COUNT(*) AS n FROM positions WHERE kind IN ('shadow','probe')").n,
     pending: db.get("SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND json_extract(data, '$.kind') = 'paper'").n,
   });
+  app.get('/api/sectors', wrap(() => ({ asOf: ctx.asOf, market: ctx.market, sectors: ctx.sectors || [] })));
   app.post(
     '/api/flags/refresh',
     wrap(async () => {
@@ -852,7 +853,7 @@ function tradeView(ctx, r) {
     initialStop: r.initial_stop,
     realized: r.realized,
     charges: r.charges,
-    exitReason: { stop: r.partial_done ? 'Breakeven stop' : 'Stop-loss', trail: 'Trailing exit', manual: 'Manual', outside: 'Outside Pivot', partial: 'Partial', failed: 'Failed breakout', time: 'Time exit' }[r.exit_reason] || r.exit_reason,
+    exitReason: { stop: r.partial_done ? 'Breakeven stop' : 'Stop-loss', trail: 'Trailing exit', manual: 'Manual', outside: 'Outside Pivot', partial: 'Partial', failed: 'Failed breakout', time: 'Time exit', climax: 'Climax sale' }[r.exit_reason] || r.exit_reason,
     grade: r.grade,
     isReentry: !!r.is_reentry,
     holdDays: tradingDaysBetween(r.entry_date, r.exit_date, ctx.settings.holidays),

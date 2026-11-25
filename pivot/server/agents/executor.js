@@ -5,7 +5,7 @@
 // stop, and the 21-EMA trailing exit. With no free capital, it records the signal as a
 // "shadow trade" so you can see later how the idea would have worked.
 
-import { computeStop, positionSize, capacityCheck, managePosition, deliveryCharges, rMultiple } from '../engine/rules.js';
+import { computeStop, positionSize, capacityCheck, managePosition, winnerState, deliveryCharges, rMultiple } from '../engine/rules.js';
 import { emaNext, roundTick } from '../engine/indicators.js';
 import { round } from '../engine/vcp.js';
 import { ist, tradingDaysBetween, MARKET } from '../core/time.js';
@@ -566,7 +566,26 @@ export class Executor {
           continue;
         }
       }
-      const actions = managePosition(pos, price, { isCloseCheck, trailLevel }, prules);
+      // Big winners: 8-week hold (no trailing exit) and climax-run sale at the close
+      const W = rules.winners || {};
+      const heldDays = tradingDaysBetween(row.entry_date, ist(this.now()).date, settings.holidays);
+      if (W.eightWeek?.enabled && !row.power_date && heldDays <= W.eightWeek.withinDays && price >= row.entry_price * (1 + W.eightWeek.gainPct / 100) && !['shadow', 'probe'].includes(row.kind)) {
+        row.power_date = ist(this.now()).date;
+        db.run('UPDATE positions SET power_date = ? WHERE id = ?', row.power_date, row.id);
+        this.log(`💪 ${row.symbol} is up ${W.eightWeek.gainPct}%+ within ${heldDays} days — holding it for 8 weeks (no trailing exit; the stop still protects it)`, 'success');
+      }
+      const powerHold = !!(W.eightWeek?.enabled && row.power_date && heldDays <= W.eightWeek.holdDays);
+      if (isCloseCheck && W.climax?.enabled && !row.climax_done && row.qty_open >= 2) {
+        const closes = db.all('SELECT close FROM candles WHERE token = ? AND date >= ? AND date < ? ORDER BY date', row.token, row.entry_date, ist(this.now()).date).map((r) => r.close);
+        closes.push(price);
+        const ws = winnerState({ entryPrice: row.entry_price, closes, held: heldDays, powerDate: row.power_date, climaxDone: !!row.climax_done, rules });
+        if (ws.climax) {
+          db.run('UPDATE positions SET climax_done = 1 WHERE id = ?', row.id);
+          this.track(this.exit(row, Math.max(1, Math.floor(row.qty_open * (W.climax.fraction || 0.5))), 'climax', ws.climaxReason, price));
+          continue;
+        }
+      }
+      const actions = managePosition(pos, price, { isCloseCheck, trailLevel, powerHold }, prules);
       for (const act of actions) {
         if (act.type === 'stop') this.track(this.exit(row, act.qty, 'stop', act.reason, price));
         else if (act.type === 'partial') {
@@ -646,8 +665,8 @@ export class Executor {
       db.update('positions', cur.id, upd);
       if (!['shadow', 'probe'].includes(cur.kind)) {
         const pct = round((fillPrice / cur.entry_price - 1) * 100, 2);
-        const emoji = reasonKey === 'stop' || reasonKey === 'failed' ? (pct < 0 ? '🛑' : '🟡') : reasonKey === 'partial' ? '💰' : reasonKey === 'time' ? '⏱' : '🏁';
-        const label = { stop: 'Stop', partial: 'Partial profit', trail: 'Trailing exit', manual: 'Manual exit', outside: 'Closed outside Pivot', failed: 'Failed breakout', time: 'Time exit' }[reasonKey] || reasonKey;
+        const emoji = reasonKey === 'stop' || reasonKey === 'failed' ? (pct < 0 ? '🛑' : '🟡') : reasonKey === 'partial' ? '💰' : reasonKey === 'time' ? '⏱' : reasonKey === 'climax' ? '🚀' : '🏁';
+        const label = { stop: 'Stop', partial: 'Partial profit', trail: 'Trailing exit', manual: 'Manual exit', outside: 'Closed outside Pivot', failed: 'Failed breakout', time: 'Time exit', climax: 'Climax sale' }[reasonKey] || reasonKey;
         this.log(`${emoji} ${label}: sold ${qty} ${cur.symbol} @ ${inr(fillPrice)} (${pct >= 0 ? '+' : ''}${pct}%) — ${reasonText}`, pct >= 0 ? 'success' : 'warn');
         this.ctx.notify?.('exits', `${emoji} <b>${label} · ${esc(cur.symbol)}</b>${cur.kind === 'paper' ? ' <i>[paper]</i>' : ''}\nSold ${qty} @ ${inr(fillPrice)} (${pct >= 0 ? '+' : ''}${pct}%) · P&L ${inr(round(pnl, 0))}\n${esc(reasonText)}${qtyOpen > 0 ? `\n${qtyOpen} shares still open` : ''}`);
         this.ctx.bus.push('positions', {});

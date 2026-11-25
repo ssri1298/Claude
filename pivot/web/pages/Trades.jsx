@@ -177,7 +177,7 @@ export function ConfirmSell({ c, onClose, onDone }) {
   );
 }
 
-const REASON = { stop: 'Stop-loss', trail: 'Trailing exit', manual: 'You sold', outside: 'Outside Pivot', partial: 'Partial', failed: 'Failed breakout', time: 'Time exit' };
+const REASON = { stop: 'Stop-loss', trail: 'Trailing exit', manual: 'You sold', outside: 'Outside Pivot', partial: 'Partial', failed: 'Failed breakout', time: 'Time exit', climax: 'Climax sale' };
 
 function ClosedList({ rows }) {
   const [open, setOpen] = useState(null);

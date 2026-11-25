@@ -266,3 +266,43 @@ test('turnover (liquidity) is computed in ₹ crore per day', async () => {
   const c = { close: Array(60).fill(500), volume: Array(60).fill(400000) };
   assert.equal(turnoverCr(c, 59), 20); // ₹500 × 4 lakh = ₹20 crore
 });
+
+test('big winners: 8-week hold after a fast +20%, climax sale on a vertical run', async () => {
+  const { winnerState, mergeRules, managePosition } = await import('../server/engine/rules.js');
+  const R = mergeRules({});
+  // +22% within 10 days → 8-week hold on
+  const up = [100, 104, 108, 112, 116, 119, 122];
+  let w = winnerState({ entryPrice: 100, closes: up, held: 6, rules: R });
+  assert.ok(w.newPower && w.powerHold);
+  // hold ends after 40 trading days
+  w = winnerState({ entryPrice: 100, closes: up, held: 41, powerDate: '2026-01-01', rules: R });
+  assert.equal(w.powerHold, false);
+  // trailing exit is paused while the hold is on
+  const pos = { entryPrice: 100, qtyOpen: 10, qtyInitial: 15, stop: 100, partialDone: true, highest: 125 };
+  assert.equal(managePosition(pos, 110, { isCloseCheck: true, trailLevel: 115, powerHold: true }, R).length, 0);
+  assert.equal(managePosition(pos, 110, { isCloseCheck: true, trailLevel: 115 }, R)[0].type, 'trail');
+  // climax: +30% run with today the biggest up-day
+  const climb = [100, 102, 104, 106, 108, 110, 112, 114, 116, 118, 121, 132];
+  w = winnerState({ entryPrice: 100, closes: climb, held: 11, rules: R });
+  assert.ok(w.climax, w.climaxReason);
+  assert.equal(winnerState({ entryPrice: 100, closes: climb, held: 11, climaxDone: true, rules: R }).climax, false, 'only once');
+  // steady rise without a big day → no climax
+  assert.equal(winnerState({ entryPrice: 100, closes: [100, 103, 106, 109, 112, 115, 118, 121, 124, 127, 128], held: 10, rules: R }).climax, false);
+});
+
+test('distribution days: falls of 0.2%+ on heavier total volume, counted over 25 sessions', async () => {
+  const { marketRegime } = await import('../server/engine/market.js');
+  const idx = [];
+  const vol = new Map();
+  for (let i = 0; i < 260; i++) {
+    const date = `D${String(i).padStart(3, '0')}`;
+    const down = i >= 240 && i % 3 === 0; // 7 down days in the last 25
+    const close = 10000 + i * 10 - (down ? 60 : 0);
+    idx.push({ date, close });
+    vol.set(date, down ? 2e9 : 1e9);
+  }
+  const m = marketRegime(idx, { above50Pct: 65 }, vol);
+  assert.ok(m.distDays >= 5, `distribution days ${m.distDays}`);
+  assert.ok(m.notes.some((n) => /distribution days/.test(n)));
+  assert.equal(marketRegime(idx, { above50Pct: 65 }).distDays, null, 'no volume → fallback');
+});
