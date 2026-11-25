@@ -22,7 +22,7 @@ try {
   const earliest = index[Math.min(index.length - 1, 252)].date;
   const from = params.from && params.from > earliest ? params.from : earliest;
   const progress = (p) => parentPort.postMessage({ type: 'progress', progress: p });
-  const common = { stocks, index, from, to: params.to, capital: params.capital, rules: params.rules, marketFilter: params.marketFilter, onProgress: progress };
+  const common = { stocks, index, from, to: params.to, capital: params.capital, rules: params.rules, marketFilter: params.marketFilter, compounding: params.compounding !== false, onProgress: progress };
 
   let result;
   if (mode === 'scan') result = findBreakoutDays(common);

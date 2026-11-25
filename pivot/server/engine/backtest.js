@@ -13,8 +13,9 @@ import { DEFAULT_RULES, mergeRules, winnerState, computeStop, positionSize, capa
 import { computeStats } from './stats.js';
 import { round } from './vcp.js';
 import { roundTick } from './indicators.js';
+import { monteCarlo, byPeriod } from './robustness.js';
 
-export function runBacktest({ stocks, index, from, to, capital = 500000, rules = DEFAULT_RULES, marketFilter = 'pause', onProgress }) {
+export function runBacktest({ stocks, index, from, to, capital = 500000, rules = DEFAULT_RULES, marketFilter = 'pause', compounding = true, onProgress }) {
   const R = mergeRules(rules);
   const prepared = prepareUniverse(stocks);
   const bySym = new Map(prepared.map((s) => [s.symbol, s]));
@@ -184,7 +185,8 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
       }
       candidates.sort((x, y) => y.score - x.score);
       for (const cnd of candidates) {
-        const eq = cash + open.reduce((acc, p) => acc + p.qtyOpen * (bySym.get(p.symbol).c.close[bySym.get(p.symbol).idx.get(d) ?? 0] || p.entryPrice), 0);
+        // compounding: size from today's account value; otherwise always from the starting capital
+        const eq = compounding ? cash + open.reduce((acc, p) => acc + p.qtyOpen * (bySym.get(p.symbol).c.close[bySym.get(p.symbol).idx.get(d) ?? 0] || p.entryPrice), 0) : capital;
         const cap = capacityCheck({ openPositions: open, industry: cnd.a.industry, rules: R });
         const size = positionSize({ equity: cnd.half ? eq / 2 : eq, cash, price: cnd.entry, stop: cnd.stop, rules: R });
         if (!cap.ok || size.qty < 1 || size.limitedByCash) {
@@ -262,8 +264,10 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
   const trades = closed.map((p) => ({ ...p }));
   const stats = computeStats(trades, equity, capital);
   return {
-    params: { from: dates[0], to: dates[dates.length - 1], capital, rules: R, marketFilter },
+    params: { from: dates[0], to: dates[dates.length - 1], capital, rules: R, marketFilter, compounding },
     stats,
+    monteCarlo: monteCarlo(trades, equity, capital),
+    periods: byPeriod(trades, equity, capital),
     equity,
     trades: trades.sort((a, b) => (a.entryDate < b.entryDate ? 1 : -1)),
     openAtEnd: open.map((p) => ({ symbol: p.symbol, entryDate: p.entryDate, entryPrice: p.entryPrice, qtyOpen: p.qtyOpen, stop: p.stop })),

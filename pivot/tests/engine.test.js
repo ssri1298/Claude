@@ -306,3 +306,32 @@ test('distribution days: falls of 0.2%+ on heavier total volume, counted over 25
   assert.ok(m.notes.some((n) => /distribution days/.test(n)));
   assert.equal(marketRegime(idx, { above50Pct: 65 }).distDays, null, 'no volume → fallback');
 });
+
+test('backtest: compounding switch, Monte Carlo ranges and results by period', () => {
+  const market = generateMarket({ seed: 42, stocks: 40, days: 700 });
+  const dates = tradingDates(market);
+  const base = { stocks: market.stocks, index: market.index, from: dates[300], capital: 500000, rules: { confirm: { enabled: false } } };
+  const on = runBacktest(base);
+  const off = runBacktest({ ...base, compounding: false });
+  assert.equal(on.params.compounding, true);
+  assert.equal(off.params.compounding, false);
+  assert.ok(on.periods.periods.length >= 1);
+  assert.ok(typeof on.periods.verdict === 'string');
+  if (on.stats.trades >= 10) {
+    assert.ok(on.monteCarlo.runs > 0);
+    assert.ok(on.monteCarlo.returnPct.p5 <= on.monteCarlo.returnPct.p50 && on.monteCarlo.returnPct.p50 <= on.monteCarlo.returnPct.p95);
+    assert.ok(on.monteCarlo.maxDrawdownPct.p95 >= on.monteCarlo.maxDrawdownPct.p50);
+  }
+});
+
+test('rule report card groups trades and suggests changes where a group loses', async () => {
+  const { reportCard } = await import('../server/engine/reportcard.js');
+  const mk = (score, realized, regime = 'uptrend') => ({ symbol: 'X', score, realized, entry_price: 100, qty_initial: 100, initial_stop: 95, exit_reason: realized > 0 ? 'trail' : 'stop', setup: JSON.stringify({ volPace: 2.2, entryCtx: { regime, sectorRs: 80, baseDepth: 20 } }) });
+  const rows = [...Array(8)].map(() => mk(80, 1500)).concat([...Array(6)].map(() => mk(68, -500)));
+  const rc = reportCard(rows, { rules: { minScore: 65 } });
+  assert.equal(rc.overall.trades, 14);
+  const sc = rc.dimensions.find((d) => d.key === 'score');
+  assert.equal(sc.buckets.find((b) => b.label === '65–74 (B)').avgR, -1);
+  assert.equal(sc.buckets.find((b) => b.label === '75–84 (A)').avgR, 3);
+  assert.ok(rc.tips.some((t) => /minimum score to 75/.test(t.text)), JSON.stringify(rc.tips));
+});

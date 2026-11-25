@@ -12,6 +12,7 @@ import { indexSnapshot, stockSnapshot } from './core/quotes.js';
 import { agentPulse } from './core/pulse.js';
 import { buildMorning, buildEvening, saveReport } from './agents/reports.js';
 import { stockBadges, filterBlock, refreshFlags } from './core/stockflags.js';
+import { reportCard } from './engine/reportcard.js';
 import { pruneHolds, setBlocked, setCorrectionBuys, setPositionHold } from './core/overrides.js';
 import { CHECK_LABELS } from './engine/confirm.js';
 import { syncHolidays } from './core/holidays.js';
@@ -569,6 +570,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
         capital: Number(req.body.capital) || ctx.settings.paperCapital,
         rules: { ...ctx.settings.rules, ...(req.body.rules || {}) },
         marketFilter: req.body.marketFilter || ctx.settings.marketFilter,
+        compounding: req.body.compounding !== false,
         precision,
       };
       const job = { id, status: 'running', progress: 0, params, phase: precision === '15m' ? 'scan' : 'daily' };
@@ -649,6 +651,15 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
     shadow: db.get("SELECT COUNT(*) AS n FROM positions WHERE kind IN ('shadow','probe')").n,
     pending: db.get("SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND json_extract(data, '$.kind') = 'paper'").n,
   });
+  app.get(
+    '/api/report-card',
+    wrap((req) => {
+      const kind = ['paper', 'live', 'shadow'].includes(req.query.kind) ? req.query.kind : ag().executor.mode;
+      const kinds = req.query.shadow === '1' && kind !== 'shadow' ? [kind, 'shadow'] : [kind];
+      const rows = db.all(`SELECT * FROM positions WHERE status = 'closed' AND kind IN (${kinds.map(() => '?').join(',')})`, ...kinds);
+      return { kind, shadow: req.query.shadow === '1', ...reportCard(rows, { rules: ctx.settings.rules }) };
+    }),
+  );
   app.get('/api/sectors', wrap(() => ({ asOf: ctx.asOf, market: ctx.market, sectors: ctx.sectors || [] })));
   app.post(
     '/api/flags/refresh',
@@ -870,6 +881,8 @@ function slimBacktest(r) {
     stats: r.stats,
     signals: r.signals,
     coverage: r.coverage || null,
+    monteCarlo: r.monteCarlo || null,
+    periods: r.periods || null,
     equity: eq.filter((_, i) => i % step === 0 || i === eq.length - 1),
     trades: r.trades.slice(0, 300).map((t) => ({
       symbol: t.symbol,

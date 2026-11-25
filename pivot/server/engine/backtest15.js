@@ -18,6 +18,7 @@
 
 import { prepareUniverse, analyzeUniverse } from './analyze.js';
 import { scoreSetup } from './scoring.js';
+import { monteCarlo, byPeriod } from './robustness.js';
 import { DEFAULT_RULES, mergeRules, winnerState, computeStop, positionSize, capacityCheck, managePosition, deliveryCharges, rMultiple } from './rules.js';
 import { volumeFraction } from './market.js';
 import { evaluateChecks } from './confirm.js';
@@ -79,7 +80,7 @@ export function findBreakoutDays({ stocks, index, from, to, rules, onProgress })
 }
 
 /** Phase 2: candle-by-candle replay. `getBars(token, date)` returns that day's 15-min candles (or []). */
-export function runBacktest15({ stocks, index, from, to, capital = 500000, rules = DEFAULT_RULES, marketFilter = 'pause', getBars, onProgress }) {
+export function runBacktest15({ stocks, index, from, to, capital = 500000, rules = DEFAULT_RULES, marketFilter = 'pause', compounding = true, getBars, onProgress }) {
   const R = mergeRules(rules);
   const prepared = prepareUniverse(stocks);
   const bySym = new Map(prepared.map((s) => [s.symbol, s]));
@@ -336,12 +337,13 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
       }
       fired.sort((x, y) => y.score - x.score);
       for (const f of fired) {
-        const eq =
-          cash +
-          open.reduce((acc, p) => {
-            const s = bySym.get(p.symbol);
-            return acc + p.qtyOpen * (s.c.close[s.idx.get(d) - 1] || p.entryPrice);
-          }, 0);
+        const eq = !compounding
+          ? capital
+          : cash +
+            open.reduce((acc, p) => {
+              const s = bySym.get(p.symbol);
+              return acc + p.qtyOpen * (s.c.close[s.idx.get(d) - 1] || p.entryPrice);
+            }, 0);
         const cap = capacityCheck({ openPositions: open, industry: f.a.industry, rules: R });
         const size = positionSize({ equity: f.half ? eq / 2 : eq, cash, price: f.entry, stop: f.stop, rules: R });
         if (!cap.ok || size.qty < 1 || size.limitedByCash) {
@@ -398,8 +400,10 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
   const totalEntry = coverage.entryDays15 + coverage.entryDaysDaily;
   const totalPos = coverage.positionDays15 + coverage.positionDaysDaily;
   return {
-    params: { from: dates[0], to: dates[dates.length - 1], capital, rules: R, marketFilter, resolution: '15minute' },
+    params: { from: dates[0], to: dates[dates.length - 1], capital, rules: R, marketFilter, compounding, resolution: '15minute' },
     stats: computeStats(trades, equity, capital),
+    monteCarlo: monteCarlo(trades, equity, capital),
+    periods: byPeriod(trades, equity, capital),
     equity,
     trades: trades.sort((a, b) => (a.entryDate < b.entryDate ? 1 : -1)),
     openAtEnd: open.map((p) => ({ symbol: p.symbol, entryDate: p.entryDate, entryPrice: p.entryPrice, qtyOpen: p.qtyOpen, stop: p.stop })),

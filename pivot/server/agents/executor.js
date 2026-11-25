@@ -171,6 +171,7 @@ export class Executor {
       parts: sig.parts,
       firstEntryDate: sig.firstEntryDate,
       kind,
+      entryCtx: this.entryContext(sig.a, sig.volPace),
       ...(force ? { limitCap: entry * 1.01 } : {}),
     };
 
@@ -228,6 +229,19 @@ export class Executor {
       '',
       `<i>Expires at ${t.hhmm} IST</i>`,
     ].join('\n');
+  }
+
+  /** Conditions at the moment of buying — used by the Dashboard's rule report card. */
+  entryContext(a, volPace) {
+    return {
+      regime: this.ctx.market?.regime || 'unknown',
+      sectorRs: a?.sectorRs ?? null,
+      rs: a?.rsRating ?? null,
+      baseDepth: a?.vcp?.depthPct ?? null,
+      contractions: a?.vcp?.count ?? a?.vcp?.contractions?.length ?? null,
+      turnoverCr: a?.turnoverCr ?? null,
+      volPace: volPace != null ? round(volPace, 2) : null,
+    };
   }
 
   markSignal(id, status, reason) {
@@ -363,7 +377,7 @@ export class Executor {
         is_reentry: p.type === 'reentry' ? 1 : 0,
         score: p.score,
         grade: p.grade,
-        setup: JSON.stringify({ pivot: p.pivot, stopNote: p.stopNote, volPace: p.volPace, good: p.good, bad: p.bad, parts: p.parts, firstEntryDate: p.firstEntryDate || t.date, approvedBy: by, checks: p.checks || null, stage: p.plannedAdd ? 1 : 0, plannedAdd: p.plannedAdd || 0, addTime: p.addTime }),
+        setup: JSON.stringify({ pivot: p.pivot, stopNote: p.stopNote, volPace: p.volPace, good: p.good, bad: p.bad, parts: p.parts, firstEntryDate: p.firstEntryDate || t.date, approvedBy: by, checks: p.checks || null, stage: p.plannedAdd ? 1 : 0, plannedAdd: p.plannedAdd || 0, addTime: p.addTime, entryCtx: p.entryCtx || null }),
       });
       db.insert('fills', { position_id: posId, ts: clock.now().toISOString(), side: 'BUY', qty: fillQty, price: fillPrice, charges, reason: p.type === 'reentry' ? 'Re-entry' : 'Breakout entry', order_id: orderId });
       if (p.type === 'reentry') db.run("UPDATE watchlist SET status = 'triggered', note = 'Re-entered' WHERE symbol = ?", p.symbol);
@@ -406,7 +420,7 @@ export class Executor {
       is_reentry: sig.type === 'reentry' ? 1 : 0,
       score: sig.score,
       grade: sig.grade,
-      setup: JSON.stringify({ pivot: sig.pivot, shadowReason: reason }),
+      setup: JSON.stringify({ pivot: sig.pivot, shadowReason: reason, entryCtx: this.entryContext(sig.a, sig.volPace) }),
     });
   }
 
