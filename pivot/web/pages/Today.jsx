@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Crown, Radar, Sparkles, ShieldCheck, Check, X, KeyRound, Pause, Play, FastForward, Gauge, TrendingUp, TrendingDown, Activity , Timer, Gavel, ChevronRight } from 'lucide-react';
 import { api, useApi, go, inr, price, pct, signed, tone, istTime, compactInr } from '../lib.js';
-import { Card, Section, Pill, GradeBadge, Button, Spinner, Empty, RiskBar, Segmented, Contractions, StageBadge, Delta , LivePrice } from '../components/ui.jsx';
-import { useQuote, useFlash, useSymbols } from '../live.js';
+import { Card, Section, Pill, GradeBadge, Button, Spinner, Empty, RiskBar, Segmented, Contractions, StageBadge, Delta , LivePrice, LiveDist, LiveStage } from '../components/ui.jsx';
+import { useQuote, useFlash, useSymbols, useAllQuotes } from '../live.js';
 import AgentPulse from '../components/AgentPulse.jsx';
 
 
@@ -64,26 +64,7 @@ export default function Today() {
 
       {/* Portfolio hero */}
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <Card className="p-6 rise">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-ink2 font-semibold text-[15px]">{d.mode === 'live' ? 'Account value' : 'Paper account value'}</div>
-              <div className="text-[44px] sm:text-[52px] font-bold tracking-tight num leading-none mt-2">{inr(d.capital.equity)}</div>
-              <div className="flex flex-wrap gap-x-5 gap-y-1 mt-3 text-[17px]">
-                <span>
-                  Today <b className={`num ${tone(d.today.dayChange + d.today.realized)}`}>{signed(d.today.dayChange + d.today.realized)}</b>
-                </span>
-                <span>
-                  Open P&L <b className={`num ${tone(d.capital.openPnl)}`}>{signed(d.capital.openPnl)}</b>
-                </span>
-              </div>
-            </div>
-            <div className="hidden sm:flex h-14 w-14 rounded-2xl bg-mint-soft text-mint items-center justify-center">
-              <TrendingUp size={28} />
-            </div>
-          </div>
-          <CapitalBar cash={d.capital.cash} invested={d.capital.marketValue} />
-        </Card>
+        <PortfolioHero d={d} />
 
         <Card className="p-6 rise">
           <div className="flex items-center justify-between">
@@ -332,6 +313,42 @@ function Mini({ label, value, sub, tone = '' }) {
   );
 }
 
+/** Account value, today's change and open P&L — re-priced with every live tick. */
+function PortfolioHero({ d }) {
+  const q = useAllQuotes();
+  // Move each open position from the server's price to the latest live price
+  const delta = d.positions.reduce((sum, p) => {
+    const live = q?.[p.symbol]?.[0];
+    return live && p.ltp ? sum + p.qtyOpen * (live - p.ltp) : sum;
+  }, 0);
+  const equity = d.capital.equity + delta;
+  const today = d.today.dayChange + d.today.realized + delta;
+  const openPnl = d.capital.openPnl + delta;
+  const dir = useFlash(Math.round(equity));
+  return (
+    <Card className="p-6 rise">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-ink2 font-semibold text-[15px]">{d.mode === 'live' ? 'Account value' : 'Paper account value'}</div>
+          <div className={`text-[44px] sm:text-[52px] font-bold tracking-tight num leading-none mt-2 rounded-lg -mx-1 px-1 inline-block ${dir === 'up' ? 'flash-up' : dir === 'down' ? 'flash-down' : ''}`}>{inr(equity)}</div>
+          <div className="flex flex-wrap gap-x-5 gap-y-1 mt-3 text-[17px]">
+            <span>
+              Today <b className={`num ${tone(today)}`}>{signed(today)}</b>
+            </span>
+            <span>
+              Open P&L <b className={`num ${tone(openPnl)}`}>{signed(openPnl)}</b>
+            </span>
+          </div>
+        </div>
+        <div className="hidden sm:flex h-14 w-14 rounded-2xl bg-mint-soft text-mint items-center justify-center">
+          <TrendingUp size={28} />
+        </div>
+      </div>
+      <CapitalBar cash={d.capital.cash} invested={d.capital.marketValue + delta} />
+    </Card>
+  );
+}
+
 export function PositionCard({ p: base, actions }) {
   // Re-price the position every few seconds from the live Kite stream
   const q = useQuote(base.symbol);
@@ -381,10 +398,9 @@ function SetupCard({ s }) {
         <Contractions list={s.contractions} />
       </div>
       <div className="flex items-center justify-between mt-3">
-        <StageBadge stage={s.stage} dist={s.distPivotPct} />
+        <LiveStage symbol={s.symbol} stage={s.stage} pivot={s.pivot} fallback={s.distPivotPct} />
         <span className="text-[15px] num text-ink2">
-          {s.distPivotPct > 0 ? 'above ' : ''}
-          <Delta value={s.distPivotPct} />
+          <LiveDist symbol={s.symbol} pivot={s.pivot} fallback={s.distPivotPct} />
         </span>
       </div>
       <div className="mt-3 text-[14px] text-ink2 flex justify-between">

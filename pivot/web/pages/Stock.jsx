@@ -1,6 +1,6 @@
 import { ChevronLeft, Check, X, AlertTriangle } from 'lucide-react';
 import { useApi, price, pct, istDateTime, niceDate } from '../lib.js';
-import { Card, Section, Pill, GradeBadge, Spinner, Empty, ScoreRing, StageBadge, Delta, LivePrice } from '../components/ui.jsx';
+import { Card, Section, Pill, GradeBadge, Spinner, Empty, ScoreRing, StageBadge, Delta, LivePrice, LiveDist } from '../components/ui.jsx';
 import PriceChart from '../components/PriceChart.jsx';
 import { PositionCard } from './Today.jsx';
 import ScoreHistory from '../components/ScoreHistory.jsx';
@@ -94,7 +94,7 @@ export default function Stock({ symbol }) {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-5">
                     <Fact label="Pivot (buy point)" value={price(v.pivot)} />
                     <Fact label="Chart stop" value={`${price(v.stop)}`} sub={`−${v.stopPct}%`} />
-                    <Fact label="From pivot" value={pct(live?.distPivotPct ?? v.distToPivotPct)} />
+                    <Fact label="From pivot" value={<LiveDist symbol={symbol} pivot={v.pivot} fallback={live?.distPivotPct ?? v.distToPivotPct} />} />
                     <Fact label="Base" value={`${Math.round((v.baseBars || 0) / 5)} weeks`} sub={`${v.depthPct}% deep`} />
                     <Fact label="Volume dry-up" value={`${Math.round((v.lastVolRatio || 0) * 100)}%`} sub="of 50-day avg" />
                     <Fact label="Prior advance" value={pct(v.priorAdvancePct, 0)} />

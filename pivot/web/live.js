@@ -136,3 +136,15 @@ export function useSymbols() {
   }
   return v;
 }
+
+/** All live quotes { SYMBOL: [ltp, changePct] } — re-renders on every price push. */
+export function useAllQuotes() {
+  return useSyncExternalStore(subscribe, () => state.q);
+}
+
+/** Live % distance from the pivot (falls back to the server value until a tick arrives). */
+export function useDistPivot(symbol, pivot, fallback) {
+  const q = useQuote(symbol);
+  if (!pivot) return fallback ?? null;
+  return q?.ltp ? (q.ltp / pivot - 1) * 100 : fallback ?? null;
+}

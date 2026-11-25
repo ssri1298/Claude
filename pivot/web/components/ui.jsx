@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X, ChevronRight, Loader2 } from 'lucide-react';
 import { pct, price } from '../lib.js';
-import { useQuote, useFlash } from '../live.js';
+import { useQuote, useFlash, useDistPivot } from '../live.js';
 
 export function Card({ className = '', children, onClick, as: As = 'div', ...rest }) {
   return (
@@ -368,4 +368,16 @@ export function LivePrice({ symbol, fallback, className = '', showChange = false
       {showChange && <Delta value={chg} className={changeClass} />}
     </span>
   );
+}
+
+/** Live distance from the pivot, e.g. +0.4%, updated with every price tick. */
+export function LiveDist({ symbol, pivot, fallback, className = '' }) {
+  const d = useDistPivot(symbol, pivot, fallback);
+  return <Delta value={d} className={className} />;
+}
+
+/** Stage badge that switches to "In buy zone" the moment the live price crosses the pivot. */
+export function LiveStage({ symbol, stage, pivot, fallback }) {
+  const d = useDistPivot(symbol, pivot, fallback);
+  return <StageBadge stage={stage} dist={pivot ? d : null} />;
 }

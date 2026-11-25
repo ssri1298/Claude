@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Search, Radar, Eye } from 'lucide-react';
 import { useApi, go, price, niceDate } from '../lib.js';
-import { Card, LargeTitle, Segmented, GradeBadge, Spinner, Empty, Contractions, StageBadge, Delta, Pill, LivePrice } from '../components/ui.jsx';
+import { Card, LargeTitle, Segmented, GradeBadge, Spinner, Empty, Contractions, StageBadge, Delta, Pill, LivePrice, LiveDist, LiveStage } from '../components/ui.jsx';
 import { ScanStatus } from '../components/AgentPulse.jsx';
 
 export default function Scanner({ query }) {
@@ -72,7 +72,7 @@ function ScanList({ rows }) {
               </div>
               <div className="text-right num">
                 <div className="font-semibold">{r.pivot ? price(r.pivot) : '—'}</div>
-                <div className="text-[14px] text-ink2">{r.distPivotPct != null && r.pivot ? <Delta value={r.distPivotPct} /> : ''}</div>
+                <div className="text-[14px] text-ink2">{r.pivot ? <LiveDist symbol={r.symbol} pivot={r.pivot} fallback={r.distPivotPct} /> : ''}</div>
               </div>
               <div className="text-right num font-semibold">
                 {r.rs}
@@ -80,7 +80,7 @@ function ScanList({ rows }) {
               </div>
               <Contractions list={r.contractions} />
               <div>
-                <StageBadge stage={r.stage} dist={r.pivot ? r.distPivotPct : null} />
+                <LiveStage symbol={r.symbol} stage={r.stage} pivot={r.pivot} fallback={r.distPivotPct} />
               </div>
             </div>
             {/* mobile */}
@@ -93,7 +93,7 @@ function ScanList({ rows }) {
                 </div>
                 <div className="flex items-center justify-between gap-2 text-[14px] text-ink2">
                   <span className="truncate">
-                    {r.pivot ? <>Pivot {price(r.pivot)} · <Delta value={r.distPivotPct} /></> : r.industry}
+                    {r.pivot ? <>Pivot {price(r.pivot)} · <LiveDist symbol={r.symbol} pivot={r.pivot} fallback={r.distPivotPct} /></> : r.industry}
                   </span>
                   <span className="num">RS {r.rs}</span>
                 </div>
