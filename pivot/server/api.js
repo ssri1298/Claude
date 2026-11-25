@@ -453,7 +453,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
     '/api/agents/history',
     wrap((req) => {
       if (!ctx.demo && !ctx.kiteSession.connected) throw Object.assign(new Error('Log in to Kite first'), { status: 400 });
-      ag().screener.extendHistory(Number(req.body?.years) || 5);
+      ag().screener.extendHistory(Math.max(1, Math.min(16, Number(req.body?.years) || 11)));
       return { ok: true };
     }),
   );
@@ -577,10 +577,13 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
       const w = new Worker(new URL('./engine/backtestWorker.js', import.meta.url), {
         workerData: { dbFile, params, indexToken, mode },
         execArgv: ['--disable-warning=ExperimentalWarning'],
+        // years of Nifty 500 history need room; the server's swap covers small machines
+        resourceLimits: { maxOldGenerationSizeMb: mode === 'optimize' ? 3072 : 2048 },
       });
       w.on('message', (m) => {
         if (m.type === 'progress') {
           job.progress = phaseFrom + (phaseTo - phaseFrom) * m.progress;
+          if (m.phase) job.phase = m.phase;
           ctx.bus.push('backtest', { id: job.id, status: job.status, progress: job.progress, phase: job.phase });
         } else if (m.type === 'done') resolve(m.result);
         else if (m.type === 'error') reject(new Error(m.error));
@@ -653,6 +656,88 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
       return { id };
     }),
   );
+  // ------------------------------------------------------------ settings optimiser (walk-forward)
+  const applyOptimized = (last, how) => {
+    const patch = last.result.recommended.patch;
+    const before = { rules: JSON.parse(JSON.stringify(ctx.settings.rules)), marketFilter: ctx.settings.marketFilter };
+    ctx.updateSettings(patch);
+    db.kvSet('lastOptimize', { ...last, appliedAt: new Date().toISOString(), appliedHow: how, before });
+    ctx.bus.log('Parent', `${how === 'auto' ? 'Applied' : 'You applied'} the optimiser's settings: ${last.result.changes.map((c) => `${c.label} ${c.from} → ${c.to}`).join('; ')}`, { level: 'success' });
+  };
+  app.post(
+    '/api/optimize',
+    wrap((req) => {
+      if ([...jobs.values()].some((j) => j.status === 'running')) throw Object.assign(new Error('A backtest or optimisation is already running'), { status: 400 });
+      const id = 'opt-' + Date.now();
+      const years = Math.max(2, Math.min(15, Number(req.body.years) || 10));
+      const fromDate = new Date(ctx.clock.now().getTime() - years * 365.25 * 86400000).toISOString().slice(0, 10);
+      const params = {
+        from: req.body.from || fromDate,
+        to: req.body.to || null,
+        capital: Number(req.body.capital) || ctx.settings.paperCapital,
+        rules: ctx.settings.rules,
+        marketFilter: ctx.settings.marketFilter,
+        maxDrawdownPct: Math.max(3, Math.min(50, Number(req.body.maxDrawdownPct) || 15)),
+        locked: Array.isArray(req.body.locked) ? req.body.locked : ['positionPct'],
+        autoApply: req.body.autoApply !== false,
+        years,
+      };
+      const job = { id, kind: 'optimize', status: 'running', progress: 0, phase: 'analyse', params, started: new Date().toISOString() };
+      jobs.set(id, job);
+      ctx.bus.log('Analyst', `Optimiser started on ${years} years of history — this can take a while; the agents keep working meanwhile`);
+      runWorker('optimize', params, job, 0, 1)
+        .then((result) => {
+          job.status = 'done';
+          job.progress = 1;
+          job.result = result;
+          db.kvSet('lastOptimize', job);
+          ctx.bus.log('Analyst', result.keepCurrent ? `Optimiser finished (${result.years} years, ${result.tested} combinations) — your current settings were the most robust` : `Optimiser finished (${result.years} years, ${result.tested} combinations) — ${result.changes.length} change${result.changes.length === 1 ? '' : 's'} recommended`, { level: 'success' });
+          if (params.autoApply && !result.keepCurrent) applyOptimized(job, 'auto');
+          const r = result.recommended.full.stats;
+          ctx.notify?.('weeklyReport', `🧪 <b>Optimiser finished</b> · ${result.years} years\n${result.keepCurrent ? 'Your current settings were the most robust — nothing changed.' : `${params.autoApply ? 'Applied' : 'Recommends'} ${result.changes.length} change${result.changes.length === 1 ? '' : 's'}.`}\nBacktest: ${r.totalReturnPct}% total, ${r.cagrPct ?? '—'}% a year, worst drawdown ${r.maxDrawdownPct}%`);
+        })
+        .catch((e) => {
+          job.status = 'error';
+          job.error = e.message;
+          ctx.bus.log('Analyst', `Optimiser failed: ${e.message}`, { level: 'error' });
+        })
+        .finally(() => ctx.bus.push('backtest', { id, status: job.status, progress: job.progress }));
+      return { id };
+    }),
+  );
+  app.get(
+    '/api/optimize/:id',
+    wrap((req) => {
+      if (req.params.id === 'last') {
+        const running = [...jobs.values()].find((j) => j.kind === 'optimize' && j.status === 'running');
+        return running || db.kvGet('lastOptimize') || null;
+      }
+      const j = jobs.get(req.params.id);
+      if (!j) throw Object.assign(new Error('Not found'), { status: 404 });
+      return j;
+    }),
+  );
+  app.post(
+    '/api/optimize/apply',
+    wrap(() => {
+      const last = db.kvGet('lastOptimize');
+      if (!last?.result?.recommended?.patch) throw Object.assign(new Error('Run the optimiser first'), { status: 400 });
+      applyOptimized(last, 'you');
+      return { settings: ctx.settings };
+    }),
+  );
+  app.post(
+    '/api/optimize/undo',
+    wrap(() => {
+      const last = db.kvGet('lastOptimize');
+      if (!last?.before) throw Object.assign(new Error('Nothing to undo'), { status: 400 });
+      ctx.updateSettings({ rules: last.before.rules, marketFilter: last.before.marketFilter });
+      db.kvSet('lastOptimize', { ...last, appliedAt: null, before: null, undoneAt: new Date().toISOString() });
+      ctx.bus.log('Parent', 'You restored your settings from before the optimiser', { level: 'warn' });
+      return { settings: ctx.settings };
+    }),
+  );
+
   app.get(
     '/api/backtest/:id',
     wrap((req) => {

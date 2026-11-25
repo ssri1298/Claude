@@ -187,6 +187,18 @@ Badges on the Scanner and stock pages show these, and the stock page says when a
 
 **Buy requests** also offer **Buy half** and **Remind me in 15 min**, in the app and on Telegram.
 
+## Finding the best settings (Backtest → Optimiser)
+
+1. **Get 10 years of data.** On the Backtest page, tap **Get 10 years of data** once, after your morning Zerodha login. It downloads 11 years: the extra year warms up the 200-day average. This takes about 10–20 minutes; progress shows on the Agents page.
+2. **Find the best settings.** Leave *Years of history* at 10 and *Apply the result automatically* on, then tap **Find the best settings**.
+   - Pivot studies the whole history once, then tests a few hundred combinations of your settings.
+   - It tunes them on the older 70% of the history and checks the best ones on the most recent 30%, which it has never seen.
+   - It only changes your settings if a combination made money in **both** periods, stayed within your drawdown limit, and beat your current settings.
+3. **Wait for the result.** On a small server this takes roughly 15–45 minutes, and the agents keep trading meanwhile. You get a notification when it finishes.
+4. **Review or undo.** The Optimiser card shows exactly what changed, with before-and-after results. **Undo** restores your old settings with one tap.
+
+Paper-trade new settings for a few weeks before trusting them with real money.
+
 ## Starting paper trading again
 
 **Settings → App & data → Erase paper-trading data** deletes every paper trade, the paper equity curve and the Dashboard statistics, and starts the paper account again at your paper capital. You can also erase the shadow trades (signals the agents tracked but did not take). Live (real-money) trades, settings, the watchlist and scores are never touched.
