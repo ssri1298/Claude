@@ -4,6 +4,7 @@
 // Every minute in market hours: checks all 500 live prices against their pivots and flags
 // breakouts that come with strong volume. Also watches recent stop-outs for re-entry.
 
+import { refreshFlags } from '../core/stockflags.js';
 import { prepareUniverse, analyzeUniverse } from '../engine/analyze.js';
 import { volumePace } from '../engine/market.js';
 import { ist, addDays, MARKET, prevTradingDay, tradingDaysBetween } from '../core/time.js';
@@ -93,11 +94,14 @@ export class Screener {
       }
       if (fetched === 0 && this.ctx.asOf === until && this.ctx.analysis.size) {
         this.log('Data already up to date — using the latest analysis');
+        refreshFlags(this.ctx, { log: (m, l) => this.log(m, l) }).catch(() => {});
         return;
       }
       this.analyse(until);
       this.backfillScores().catch(() => {});
       this.status.lastPrep = this.ctx.clock.now().toISOString();
+      // Results dates, surveillance lists and circuit bands (in the background; never blocks trading)
+      refreshFlags(this.ctx, { log: (m, l) => this.log(m, l) }).catch((e) => this.log(`Stock filters: ${e.message}`, 'warn'));
       this.status.progress = null;
       const c = this.status.counts;
       this.log(

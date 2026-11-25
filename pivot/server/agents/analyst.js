@@ -7,6 +7,7 @@ import { scoreSetup, explain } from '../engine/scoring.js';
 import { ist } from '../core/time.js';
 import { round } from '../engine/vcp.js';
 import { getOverrides } from '../core/overrides.js';
+import { filterBlock } from '../core/stockflags.js';
 
 const NAME = 'Analyst';
 
@@ -37,9 +38,13 @@ export class Analyst {
       if (regime === 'pressure') minScore += rules.pressureExtraScore;
       let status = 'ranked';
       let reason = '';
+      const fb = ov.blocked[s.symbol] ? null : filterBlock(this.ctx, s.a, t.date);
       if (ov.blocked[s.symbol]) {
         status = 'skipped_blocked';
         reason = 'You blocked this stock';
+      } else if (fb) {
+        status = 'skipped_' + fb.code;
+        reason = fb.reason;
       } else if (regime === 'downtrend' && settings.marketFilter === 'pause' && !correctionOk) {
         status = 'skipped_regime';
         reason = 'Market is in a correction — new buys paused';

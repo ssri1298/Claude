@@ -381,3 +381,20 @@ export function LiveStage({ symbol, stage, pivot, fallback }) {
   const d = useDistPivot(symbol, pivot, fallback);
   return <StageBadge stage={stage} dist={pivot ? d : null} />;
 }
+
+const FLAG_TONE = { results: 'butter', surveillance: 'coral', band: 'coral', liquidity: 'gray' };
+const FLAG_TITLE = { results: 'Quarterly results coming up', surveillance: 'On an NSE surveillance list', band: 'Tight circuit band', liquidity: 'Low daily turnover' };
+/** Small warning chips: results soon, ASM/GSM, tight circuit band, low liquidity. */
+export function FlagBadges({ badges, className = '' }) {
+  if (!badges?.length) return null;
+  return (
+    <span className={`inline-flex flex-wrap gap-1 ${className}`}>
+      {badges.map((b) => (
+        <span key={b.code} title={FLAG_TITLE[b.code]} className={`text-[11px] font-bold rounded-full px-2 py-0.5 whitespace-nowrap ${PILL_TONES[FLAG_TONE[b.code]] || PILL_TONES.gray}`}>
+          {b.code === 'results' ? '📅 ' : '⚠︎ '}
+          {b.label}
+        </span>
+      ))}
+    </span>
+  );
+}

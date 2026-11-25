@@ -1,6 +1,6 @@
 import { ChevronLeft, Check, X, AlertTriangle } from 'lucide-react';
 import { useApi, price, pct, istDateTime, niceDate } from '../lib.js';
-import { Card, Section, Pill, GradeBadge, Spinner, Empty, ScoreRing, StageBadge, Delta, LivePrice, LiveDist } from '../components/ui.jsx';
+import { Card, Section, Pill, GradeBadge, Spinner, Empty, ScoreRing, StageBadge, Delta, LivePrice, LiveDist, FlagBadges } from '../components/ui.jsx';
 import PriceChart from '../components/PriceChart.jsx';
 import { PositionCard } from './Today.jsx';
 import ScoreHistory from '../components/ScoreHistory.jsx';
@@ -28,7 +28,9 @@ export default function Stock({ symbol }) {
           </div>
           <div className="text-ink2 text-[16px]">
             {data.info?.name} · {data.info?.industry}
+            {a?.turnoverCr != null && <span className="num"> · ₹{a.turnoverCr} cr/day</span>}
           </div>
+          <FlagBadges badges={data.badges} className="mt-1.5" />
         </div>
         <div className="text-right">
           <LivePrice symbol={symbol} fallback={{ ltp, changePct: live?.changePct ?? a?.changePct }} showChange className="text-[34px] font-bold tracking-tight" changeClass="text-[18px]" />
@@ -38,6 +40,16 @@ export default function Stock({ symbol }) {
       <Card className="p-4 sm:p-5">
         <PriceChart candles={data.candles} vcp={v.valid ? v : v.pivot ? v : null} positions={data.positions} />
       </Card>
+
+      {data.filter && (
+        <Card className="p-4 sm:p-5 flex gap-3 items-start ring-1 ring-butter/40">
+          <AlertTriangle size={22} className="text-butter shrink-0 mt-0.5" />
+          <div>
+            <div className="font-bold text-[17px]">The agents won't buy this stock right now</div>
+            <div className="text-ink2 text-[15px]">{data.filter.reason}. You can change this in Settings → Buying rules → Stock filters, or buy it anyway from the Overrule page.</div>
+          </div>
+        </Card>
+      )}
 
       {open.map((p) => (
         <PositionCard key={p.id} p={p} />

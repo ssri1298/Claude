@@ -11,6 +11,7 @@ import { DemoFeed } from './demo/demoFeed.js';
 import { Telegram } from './notify/telegram.js';
 import { Parent } from './agents/parent.js';
 import { startQuotePusher } from './core/quotes.js';
+import { loadFlags } from './core/stockflags.js';
 import { WebPush, toPlain } from './notify/webpush.js';
 import { IntradayTracker } from './core/intraday.js';
 import { syncHolidays } from './core/holidays.js';
@@ -158,6 +159,9 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
   // ---------- intraday candles / VWAP for breakout confirmation
   ctx.intraday = new IntradayTracker(ctx.clock);
   ctx.feed.on('ticks', (t) => ctx.intraday.onTicks(t));
+
+  // ---------- stock filters (results dates, surveillance, circuit bands)
+  loadFlags(ctx);
 
   // ---------- agents
   const parent = new Parent(ctx);

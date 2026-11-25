@@ -11,6 +11,7 @@ import { NIFTY50_TOKEN, parseNifty500Csv } from './broker/feeds.js';
 import { indexSnapshot, stockSnapshot } from './core/quotes.js';
 import { agentPulse } from './core/pulse.js';
 import { buildMorning, buildEvening, saveReport } from './agents/reports.js';
+import { stockBadges, filterBlock, refreshFlags } from './core/stockflags.js';
 import { pruneHolds, setBlocked, setCorrectionBuys, setPositionHold } from './core/overrides.js';
 import { CHECK_LABELS } from './engine/confirm.js';
 import { syncHolidays } from './core/holidays.js';
@@ -174,6 +175,8 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
         candles.push({ date: t.date, open: q.open, high: q.high, low: q.low, close: q.ltp, volume: q.volume || 0, live: true });
       return {
         analysis: a || null,
+        badges: a ? stockBadges(ctx, a, t.date) : [],
+        filter: a ? filterBlock(ctx, a, t.date) : null,
         info: u,
         live: ctx.live.get(sym) || null,
         candles,
@@ -412,6 +415,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
       telegram: { ok: !!ctx.telegram?.ok, bot: ctx.telegram?.botName, paired: !!ctx.secrets.telegramChatId, error: ctx.telegram?.error || null },
       kite: { connected: !!ctx.kiteSession.connected, userName: ctx.kiteSession.userName },
       push: { devices: ctx.webpush?.subs?.().length || 0 },
+      flags: { updated: ctx.flags?.updated || null, problems: ctx.flags?.problems || [], results: Object.keys(ctx.flags?.results || {}).length, surveillance: Object.keys(ctx.flags?.surveillance || {}).length, bands: Object.keys(ctx.flags?.bands || {}).length },
       universeCount: db.get('SELECT COUNT(*) AS n FROM universe WHERE active = 1').n,
       historyFrom: db.get('SELECT MIN(date) AS d FROM candles').d,
       holidayNames: db.kvGet('holidayNames', {}),
@@ -645,6 +649,13 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
     shadow: db.get("SELECT COUNT(*) AS n FROM positions WHERE kind IN ('shadow','probe')").n,
     pending: db.get("SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND json_extract(data, '$.kind') = 'paper'").n,
   });
+  app.post(
+    '/api/flags/refresh',
+    wrap(async () => {
+      await refreshFlags(ctx, { log: (m, l) => ctx.bus.log('Screener', m, { level: l }) });
+      return { ok: true, problems: ctx.flags.problems };
+    }),
+  );
   app.get('/api/paper/summary', wrap(() => ({ ...paperCounts(), capital: ctx.settings.paperCapital })));
   app.post(
     '/api/paper/erase',
@@ -709,6 +720,8 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
 function brief(ctx, a) {
   const l = ctx.live.get(a.symbol);
   return {
+    badges: stockBadges(ctx, a, ist(ctx.clock.now()).date),
+    turnoverCr: a.turnoverCr,
     symbol: a.symbol,
     name: a.name,
     industry: a.industry,

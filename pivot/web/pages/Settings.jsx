@@ -101,11 +101,30 @@ export default function Settings({ query, section }) {
 
       {section === 'capital' && (
         <>
-      <Group title="Capital" footer="Each new trade uses this share of your total capital. If there is not enough free cash, the signal is saved as a shadow trade and the setup stays on the watchlist.">
+      <Group title="Capital" footer="Same %: every trade gets the same share of capital. By risk: every trade risks the same amount, so tight, high-quality setups get bigger positions — the way Minervini sizes. Each new trade uses this share of your total capital. If there is not enough free cash, the signal is saved as a shadow trade and the setup stays on the watchlist.">
         <Row icon={Wallet} iconTone="mint" title="Capital source" right={<Segmented size="sm" value={s.capitalSource} onChange={(v) => save({ capitalSource: v })} options={[{ value: 'kite', label: 'Kite funds' }, { value: 'fixed', label: 'Fixed' }]} />} />
         {s.capitalSource === 'fixed' && <Row title="Capital for Pivot" right={<NumberField value={s.fixedCapital} onChange={(v) => save({ fixedCapital: v })} step={10000} suffix="₹" width="w-36" />} />}
         <Row title="Paper-trading capital" right={<NumberField value={s.paperCapital} onChange={(v) => save({ paperCapital: v })} step={10000} suffix="₹" width="w-36" />} />
-        <Row title="Position size" right={<NumberField value={r.positionPct} onChange={rule('positionPct')} suffix="% each" width="w-20" />} />
+        <Row title="How to size each trade">
+          <Segmented
+            size="sm"
+            className="mt-2"
+            value={r.sizing?.method || 'percent'}
+            onChange={(v) => save({ rules: { sizing: { method: v } } })}
+            options={[
+              { value: 'percent', label: 'Same % of capital' },
+              { value: 'risk', label: 'By risk (stop distance)' },
+            ]}
+          />
+        </Row>
+        {(r.sizing?.method || 'percent') === 'percent' ? (
+          <Row title="Position size" right={<NumberField value={r.positionPct} onChange={rule('positionPct')} suffix="% each" width="w-20" />} />
+        ) : (
+          <>
+            <Row title="Risk per trade" subtitle={`If the stop is hit you lose this much of your capital. 0.75% with a 5% stop = a 15% position.`} right={<NumberField value={r.sizing.riskPct} onChange={(v) => save({ rules: { sizing: { riskPct: Math.max(0.1, Math.min(3, v)) } } })} suffix="%" step={0.05} width="w-20" />} />
+            <Row title="Largest position" subtitle="Tight stops never put more than this in one stock" right={<NumberField value={r.sizing.maxPct} onChange={(v) => save({ rules: { sizing: { maxPct: Math.max(5, Math.min(50, v)) } } })} suffix="%" width="w-20" />} />
+          </>
+        )}
         <Row title="Maximum open positions" right={<NumberField value={r.maxPositions} onChange={rule('maxPositions')} width="w-20" />} />
         <Row title="Maximum per industry" right={<NumberField value={r.maxPerIndustry} onChange={rule('maxPerIndustry')} width="w-20" />} />
       </Group>
@@ -121,6 +140,14 @@ export default function Settings({ query, section }) {
         <Row title="Breakout volume" subtitle="Projected volume vs 50-day average" right={<NumberField value={r.minVolPace} onChange={rule('minVolPace')} suffix="×" step={0.1} width="w-20" />} />
       </Group>
 
+      <Group title="Stock filters" footer="Checked before every buy. Results dates and surveillance lists come from NSE, circuit bands from Zerodha — refreshed every morning and evening. The backtest can only apply the turnover filter (no history for the others).">
+        <Row icon={CalendarOff} iconTone="butter" title="Skip stocks with results coming up" subtitle="One bad result can gap a stock straight through its stop" right={<Toggle checked={!!r.filters?.results?.enabled} onChange={(v) => save({ rules: { filters: { results: { enabled: v } } } })} />} />
+        {r.filters?.results?.enabled && <Row title="No new buys within" right={<NumberField value={r.filters.results.daysBefore} onChange={(v) => save({ rules: { filters: { results: { daysBefore: Math.max(0, Math.min(20, v)) } } } })} suffix="days before" width="w-20" />} />}
+        <Row title="Skip ASM / GSM stocks" subtitle="NSE surveillance lists — extra margins, trading limits, unreliable breakouts" right={<Toggle checked={!!r.filters?.surveillance} onChange={(v) => save({ rules: { filters: { surveillance: v } } })} />} />
+        <Row title="Skip tight circuit bands" subtitle="Non-F&O stocks with a 5% or 10% band — a stop can't sell at the lower circuit" right={<Toggle checked={(r.filters?.minBandPct || 0) > 0} onChange={(v) => save({ rules: { filters: { minBandPct: v ? 20 : 0 } } })} />} />
+        <Row title="Minimum daily turnover" subtitle="50-day average of ₹ traded per day — so orders fill near the expected price" right={<NumberField value={r.filters?.minTurnoverCr} onChange={(v) => save({ rules: { filters: { minTurnoverCr: Math.max(0, v) } } })} suffix="₹ cr" width="w-20" />} />
+        <FlagsStatus f={data.flags} reload={reload} demo={data.demo} />
+      </Group>
       <Group title="Breakout confirmation" footer="The first tick above the pivot only 'arms' a stock. Pivot buys once these checks pass. Every breakout is also tracked from its first tick, so the Dashboard can show which checks really help.">
         <Row icon={ShieldCheck} iconTone="lav" title="Confirm breakouts" subtitle="Off = buy on the first tick above the pivot" right={<Toggle checked={c.enabled} onChange={(v) => conf({ enabled: v })} />} />
         {c.enabled && (
@@ -366,6 +393,41 @@ function ErasePaper() {
         )}
       </Sheet>
     </>
+  );
+}
+
+function FlagsStatus({ f, reload, demo }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const run = async () => {
+    setBusy(true);
+    setMsg('');
+    try {
+      const r = await api('/flags/refresh', { method: 'POST' });
+      setMsg(r.problems?.length ? 'Some lists could not be downloaded: ' + r.problems.join(', ') : 'Lists updated');
+      reload();
+    } catch (e) {
+      setMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Row
+      title="Lists"
+      subtitle={
+        <>
+          {f?.updated ? `${f.results} upcoming results · ${f.surveillance} under surveillance · ${f.bands} circuit bands${demo ? ' (demo data)' : ''} · updated ${new Date(f.updated).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : 'Not downloaded yet'}
+          {f?.problems?.length > 0 && <span className="block text-coral">Last refresh had problems: {f.problems.join(', ')}</span>}
+          {msg && <span className="block text-ink">{msg}</span>}
+        </>
+      }
+      right={
+        <Button size="sm" tone="soft" loading={busy} onClick={run}>
+          Refresh
+        </Button>
+      }
+    />
   );
 }
 

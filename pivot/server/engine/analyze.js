@@ -79,6 +79,7 @@ export function analyzeUniverse(prepared, { indexCandles, date, vcpOptions } = {
       ema10: round(s.m.ema10[end]),
       ema21: round(s.m.ema21[end]),
       avgVol50: Math.round(s.m.vol50[end] || 0),
+      turnoverCr: turnoverCr(s.c, end),
     };
     // Only run the (more expensive) VCP detector on stocks that are in a Stage 2 uptrend-ish.
     if (trend.passCount >= 6) {
@@ -108,6 +109,17 @@ export function analyzeUniverse(prepared, { indexCandles, date, vcpOptions } = {
   }
   out.sort((x, y) => y.score - x.score);
   return { stocks: out, breadth, market };
+}
+
+/** Average ₹ crore traded per day over the last 50 sessions (liquidity). */
+export function turnoverCr(c, end, n = 50) {
+  let sum = 0,
+    k = 0;
+  for (let i = Math.max(0, end - n + 1); i <= end; i++) {
+    sum += c.close[i] * (c.volume[i] || 0);
+    k++;
+  }
+  return k ? round(sum / k / 1e7, 1) : null;
 }
 
 /** Is this analysed stock a tradeable candidate (setup valid, in or near buy zone)? */

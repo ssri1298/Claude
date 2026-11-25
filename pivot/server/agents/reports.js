@@ -32,6 +32,8 @@ function openPositions(ctx, kind, date) {
       watch.push(left > 0 ? `Time exit in ${left} trading ${left === 1 ? 'day' : 'days'}` : 'Time exit at today’s close');
     }
     if (p.partial_done) watch.push('⅓ booked · stop at breakeven or better');
+    const res = ctx.flags?.results?.[p.symbol];
+    if (res && res >= date) watch.push(`📅 Quarterly results on ${res} — consider booking profit or tightening the stop`);
     return {
       symbol: p.symbol,
       qty: p.qty_open,

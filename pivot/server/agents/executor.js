@@ -125,7 +125,7 @@ export class Executor {
     const open = this.openPositions(kind);
     const cap = capacityCheck({ openPositions: open, industry: sig.a.industry, rules });
     const capital = await this.capital(kind);
-    const size = positionSize({ equity: sig.half ? capital.equity / 2 : capital.equity, cash: capital.cash, price: entry, rules });
+    const size = positionSize({ equity: sig.half ? capital.equity / 2 : capital.equity, cash: capital.cash, price: entry, stop: stopRes.stop, rules });
     if (force && size.qty < 1) fail(`Not enough free cash (${inr(capital.cash)} available)`);
     if (!force && (!cap.ok || size.qty < 1 || (size.limitedByCash && size.value < size.target * 0.5))) {
       const why = !cap.ok ? cap.reason : `Not enough free cash (${inr(capital.cash)} available, ${inr(size.target)} needed)`;

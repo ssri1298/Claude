@@ -425,3 +425,29 @@ test('morning and evening reports are built, saved once per day and listed', asy
   assert.equal(e.signals.bought.length, 1);
   assert.match(eveningText(e), /Evening report/);
 });
+
+test('stock filters: results soon, surveillance, tight band and low turnover block new buys', async () => {
+  const { ctx, a, an } = await setup();
+  const { filterBlock } = await import('../server/core/stockflags.js');
+  const date = '2028-03-15';
+  ctx.flags = { results: {}, surveillance: {}, bands: {}, fno: new Set() };
+  a.turnoverCr = 50;
+  assert.equal(filterBlock(ctx, a, date), null);
+  ctx.flags.results.TEST = '2028-03-17';
+  assert.equal(filterBlock(ctx, a, date).code, 'results');
+  quote(ctx, 101);
+  const [s] = an.rank([signal(a, 101)]);
+  assert.equal(s.status, 'skipped_results');
+  ctx.flags.results = {};
+  ctx.flags.surveillance.TEST = 'ASM (short term)';
+  assert.equal(filterBlock(ctx, a, date).code, 'surveillance');
+  ctx.flags.surveillance = {};
+  ctx.flags.bands.TEST = 5;
+  assert.equal(filterBlock(ctx, a, date).code, 'band');
+  ctx.flags.fno.add('TEST');
+  assert.equal(filterBlock(ctx, a, date), null, 'F&O stocks have no fixed band');
+  a.turnoverCr = 3;
+  assert.equal(filterBlock(ctx, a, date).code, 'liquidity');
+  ctx.updateSettings({ rules: { filters: { minTurnoverCr: 0 } } });
+  assert.equal(filterBlock(ctx, a, date), null);
+});

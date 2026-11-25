@@ -246,3 +246,23 @@ test('agents panel: next scheduled job', async () => {
   assert.equal(nextJob(settings, { minutes: 17 * 60 }, 'post-market').label, 'Morning scan tomorrow');
   assert.equal(nextJob(settings, { minutes: 11 * 60 }, 'holiday'), null);
 });
+
+test('risk-based sizing: same rupee risk per trade, capped at the largest position', async () => {
+  const { positionSize, mergeRules } = await import('../server/engine/rules.js');
+  const R = mergeRules({ sizing: { method: 'risk', riskPct: 0.75, maxPct: 20 } });
+  // 5% stop: 0.75% risk → 15% position
+  const a = positionSize({ equity: 1000000, cash: 1000000, price: 100, stop: 95, rules: R });
+  assert.equal(a.qty, 1500);
+  // 2% stop would be 37.5% → capped at 20%
+  const b = positionSize({ equity: 1000000, cash: 1000000, price: 100, stop: 98, rules: R });
+  assert.equal(b.qty, 2000);
+  // percent sizing unchanged
+  const c = positionSize({ equity: 1000000, cash: 1000000, price: 100, stop: 95, rules: mergeRules({}) });
+  assert.equal(c.qty, 1000);
+});
+
+test('turnover (liquidity) is computed in ₹ crore per day', async () => {
+  const { turnoverCr } = await import('../server/engine/analyze.js');
+  const c = { close: Array(60).fill(500), volume: Array(60).fill(400000) };
+  assert.equal(turnoverCr(c, 59), 20); // ₹500 × 4 lakh = ₹20 crore
+});

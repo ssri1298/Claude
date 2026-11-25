@@ -18,7 +18,7 @@
 
 import { prepareUniverse, analyzeUniverse } from './analyze.js';
 import { scoreSetup } from './scoring.js';
-import { DEFAULT_RULES, computeStop, positionSize, capacityCheck, managePosition, deliveryCharges, rMultiple } from './rules.js';
+import { DEFAULT_RULES, mergeRules, computeStop, positionSize, capacityCheck, managePosition, deliveryCharges, rMultiple } from './rules.js';
 import { volumeFraction } from './market.js';
 import { evaluateChecks } from './confirm.js';
 import { computeStats } from './stats.js';
@@ -28,15 +28,6 @@ import { roundTick } from './indicators.js';
 export const HOLD_WINDOW_DAYS = 90; // trading days of 15-min data fetched after each breakout day
 const SLOTS = 25; // 09:15 … 15:15
 
-const mergeRules = (rules) => ({
-  ...DEFAULT_RULES,
-  ...rules,
-  reentry: { ...DEFAULT_RULES.reentry, ...(rules?.reentry || {}) },
-  confirm: { ...DEFAULT_RULES.confirm, ...(rules?.confirm || {}) },
-  twoStage: { ...DEFAULT_RULES.twoStage, ...(rules?.twoStage || {}) },
-  failedExit: { ...DEFAULT_RULES.failedExit, ...(rules?.failedExit || {}) },
-  timeExit: { ...DEFAULT_RULES.timeExit, ...(rules?.timeExit || {}) },
-});
 
 const isSetup = (a) => a.vcp?.valid && a.trend?.pass && ['near', 'breakout', 'forming'].includes(a.stage) && (a.vcp.distToPivotPct ?? 0) <= 0;
 
@@ -98,7 +89,7 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
   const closed = [];
   const equity = [];
   const stoppedOut = new Map();
-  const signals = { total: 0, taken: 0, skippedCapital: 0, skippedRegime: 0, skippedScore: 0, skippedStop: 0, notConfirmed: 0 };
+  const signals = { total: 0, taken: 0, skippedLiquidity: 0, skippedCapital: 0, skippedRegime: 0, skippedScore: 0, skippedStop: 0, notConfirmed: 0 };
   const CF = R.confirm;
   const TS = R.twoStage;
   const FX = R.failedExit;
@@ -311,6 +302,10 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
         const sc = scoreSetup(c.isRe && !c.a.vcp?.valid ? { ...c.a, vcp: { ...c.a.vcp, valid: true, pivot: c.pivot } } : c.a, { price: entry, volPace: pace });
         let minScore = R.minScore;
         if (regime === 'pressure') minScore += R.pressureExtraScore;
+        if (R.filters?.minTurnoverCr && c.a.turnoverCr != null && c.a.turnoverCr < R.filters.minTurnoverCr) {
+          signals.skippedLiquidity++;
+          continue;
+        }
         if (regime === 'downtrend' && marketFilter === 'pause') {
           signals.skippedRegime++;
           continue;
@@ -335,7 +330,7 @@ export function runBacktest15({ stocks, index, from, to, capital = 500000, rules
             return acc + p.qtyOpen * (s.c.close[s.idx.get(d) - 1] || p.entryPrice);
           }, 0);
         const cap = capacityCheck({ openPositions: open, industry: f.a.industry, rules: R });
-        const size = positionSize({ equity: f.half ? eq / 2 : eq, cash, price: f.entry, rules: R });
+        const size = positionSize({ equity: f.half ? eq / 2 : eq, cash, price: f.entry, stop: f.stop, rules: R });
         if (!cap.ok || size.qty < 1 || size.limitedByCash) {
           signals.skippedCapital++;
           continue;

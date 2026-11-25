@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Search, Radar, Eye } from 'lucide-react';
 import { useApi, go, price, niceDate } from '../lib.js';
-import { Card, LargeTitle, Segmented, GradeBadge, Spinner, Empty, Contractions, StageBadge, Delta, Pill, LivePrice, LiveDist, LiveStage } from '../components/ui.jsx';
+import { Card, LargeTitle, Segmented, GradeBadge, Spinner, Empty, Contractions, StageBadge, Delta, Pill, LivePrice, LiveDist, LiveStage, FlagBadges } from '../components/ui.jsx';
 import { ScanStatus } from '../components/AgentPulse.jsx';
 
 export default function Scanner({ query }) {
@@ -62,6 +62,7 @@ function ScanList({ rows }) {
               <div className="min-w-0">
                 <div className="font-bold text-[18px]">{r.symbol}</div>
                 <div className="text-ink2 text-[14px] truncate">{r.industry}</div>
+                <FlagBadges badges={r.badges} className="mt-1" />
               </div>
               <div>
                 <GradeBadge grade={r.grade} />
@@ -97,6 +98,7 @@ function ScanList({ rows }) {
                   </span>
                   <span className="num">RS {r.rs}</span>
                 </div>
+                <FlagBadges badges={r.badges} className="mt-1" />
               </div>
             </div>
           </button>

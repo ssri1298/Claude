@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Crown, Radar, Sparkles, ShieldCheck, Check, X, KeyRound, Pause, Play, FastForward, Gauge, TrendingUp, TrendingDown, Activity , Timer, Gavel, ChevronRight } from 'lucide-react';
 import { api, useApi, go, inr, price, pct, signed, tone, istTime, compactInr } from '../lib.js';
-import { Card, Section, Pill, GradeBadge, Button, Spinner, Empty, RiskBar, Segmented, Contractions, StageBadge, Delta , LivePrice, LiveDist, LiveStage } from '../components/ui.jsx';
+import { Card, Section, Pill, GradeBadge, Button, Spinner, Empty, RiskBar, Segmented, Contractions, StageBadge, Delta , LivePrice, LiveDist, LiveStage, FlagBadges } from '../components/ui.jsx';
 import { useQuote, useFlash, useSymbols, useAllQuotes } from '../live.js';
 import AgentPulse from '../components/AgentPulse.jsx';
 
@@ -403,6 +403,7 @@ function SetupCard({ s }) {
           <LiveDist symbol={s.symbol} pivot={s.pivot} fallback={s.distPivotPct} />
         </span>
       </div>
+      <FlagBadges badges={s.badges} className="mt-2" />
       <div className="mt-3 text-[14px] text-ink2 flex justify-between">
         <span>RS {s.rs}</span>
         <span>Score {s.score}</span>

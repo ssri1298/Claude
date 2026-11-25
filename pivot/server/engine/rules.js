@@ -28,7 +28,34 @@ export const DEFAULT_RULES = {
   twoStage: { enabled: true, firstFraction: 0.5, addTime: '15:15' }, // half at the breakout, rest at 15:15 if it holds
   failedExit: { enabled: true, days: 2 }, // sell a new buy that closes back below the pivot within 2 days
   timeExit: { enabled: true, days: 7 }, // sell at the close if neither the stop nor the +10% target was hit within 7 trading days
+  // Position sizing: 'percent' = positionPct of capital per stock; 'risk' = lose at most riskPct of capital
+  // if the stop is hit (size = risk ÷ stop distance), never more than maxPct of capital in one stock.
+  sizing: { method: 'percent', riskPct: 0.75, maxPct: 20 },
+  // Stock filters (India-specific traps)
+  filters: {
+    results: { enabled: true, daysBefore: 5 }, // no new buys within N days before quarterly results
+    surveillance: true, // skip stocks on NSE's ASM / GSM surveillance lists
+    minBandPct: 20, // skip non-F&O stocks whose circuit band is tighter than this (5% / 10% bands)
+    minTurnoverCr: 10, // skip stocks trading less than ₹N crore a day (50-day average)
+  },
+  // Selling big winners
+  winners: {
+    climax: { enabled: true, gainPct: 25, days: 15, fraction: 0.5 }, // sell part into a climax run
+    eightWeek: { enabled: true, gainPct: 20, withinDays: 15, holdDays: 40 }, // a fast +20% → hold 8 weeks (no trailing exit)
+  },
 };
+
+/** Fill in any missing rule (including nested groups) from the defaults. */
+export function mergeRules(rules = {}) {
+  const out = { ...DEFAULT_RULES, ...rules };
+  for (const [k, v] of Object.entries(DEFAULT_RULES)) {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      out[k] = { ...v, ...(rules?.[k] || {}) };
+      for (const [k2, v2] of Object.entries(v)) if (v2 && typeof v2 === 'object' && !Array.isArray(v2)) out[k][k2] = { ...v2, ...(rules?.[k]?.[k2] || {}) };
+    }
+  }
+  return out;
+}
 
 /** Zerodha equity-delivery charges (NSE), per order side. */
 export function deliveryCharges(side, qty, price) {
@@ -62,9 +89,18 @@ export function computeStop(entry, chartStop, rules = DEFAULT_RULES) {
   return { stop, stopPct: round((1 - stop / entry) * 100, 2), note };
 }
 
-/** Quantity to buy: positionPct of total capital, limited by free cash. */
-export function positionSize({ equity, cash, price, rules = DEFAULT_RULES }) {
-  const target = (equity * rules.positionPct) / 100;
+/**
+ * Quantity to buy, limited by free cash.
+ *  percent sizing: positionPct of total capital.
+ *  risk sizing:    (riskPct of capital) ÷ (price − stop), capped at maxPct of capital.
+ */
+export function positionSize({ equity, cash, price, stop, rules = DEFAULT_RULES }) {
+  const sz = rules.sizing || DEFAULT_RULES.sizing;
+  let target = (equity * rules.positionPct) / 100;
+  if (sz.method === 'risk' && stop > 0 && stop < price) {
+    const perShareRisk = price - stop;
+    target = Math.min(((equity * sz.riskPct) / 100 / perShareRisk) * price, (equity * sz.maxPct) / 100);
+  }
   const budget = Math.min(target, cash * 0.995); // keep a little for charges
   const qty = Math.floor(budget / price);
   return { qty, value: round(qty * price), target: round(target), limitedByCash: budget < target };
