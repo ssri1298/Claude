@@ -361,3 +361,40 @@ test('overrule: no partial sale at +10% when you switch it off', async () => {
   assert.equal(pos.partial_done, 0);
   assert.equal(pos.qty_open, pos0.qty_open);
 });
+
+test('erase paper data: paper and (optionally) shadow trades go, live trades stay', async () => {
+  const express = (await import('express')).default;
+  const { mountApi } = await import('../server/api.js');
+  const { ctx } = await setup();
+  const ins = (kind, status) => ctx.db.insert('positions', { kind, symbol: 'TEST', token: 1, status, entry_date: '2028-03-10', entry_price: 100, qty_initial: 5, qty_open: status === 'open' ? 5 : 0, stop: 95 });
+  const p1 = ins('paper', 'open');
+  ins('paper', 'closed');
+  ins('shadow', 'open');
+  const live = ins('live', 'closed');
+  ctx.db.insert('fills', { position_id: p1, side: 'BUY', qty: 5, price: 100 });
+  ctx.db.insert('equity', { date: '2028-03-10', kind: 'paper', equity: 500000 });
+  const app = express();
+  app.use(express.json());
+  mountApi(app, ctx, { valid: () => true, hasPassword: () => true, throttle: () => false }, {});
+  const srv = app.listen(0);
+  const url = `http://127.0.0.1:${srv.address().port}/api`;
+  try {
+    const sum = await (await fetch(url + '/paper/summary')).json();
+    assert.deepEqual([sum.open, sum.closed, sum.shadow], [1, 1, 1]);
+    const bad = await fetch(url + '/paper/erase', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    assert.equal(bad.status, 400, 'needs confirmation');
+    const r = await (await fetch(url + '/paper/erase', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirm: 'ERASE' }) })).json();
+    assert.ok(r.ok);
+    assert.equal(ctx.db.get("SELECT COUNT(*) AS n FROM positions WHERE kind = 'paper'").n, 0);
+    assert.equal(ctx.db.get("SELECT COUNT(*) AS n FROM positions WHERE kind = 'shadow'").n, 1, 'shadow kept unless asked');
+    assert.equal(ctx.db.get('SELECT COUNT(*) AS n FROM fills').n, 0);
+    assert.equal(ctx.db.get("SELECT COUNT(*) AS n FROM equity WHERE kind = 'paper'").n, 0);
+    assert.ok(ctx.db.get('SELECT id FROM positions WHERE id = ?', live), 'live trade untouched');
+    await fetch(url + '/paper/erase', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirm: 'ERASE', includeShadow: true }) });
+    assert.equal(ctx.db.get("SELECT COUNT(*) AS n FROM positions WHERE kind = 'shadow'").n, 0);
+    const cap = await ctx.agents.executor.capital('paper');
+    assert.equal(cap.equity, ctx.settings.paperCapital, 'paper account back to the starting capital');
+  } finally {
+    srv.close();
+  }
+});

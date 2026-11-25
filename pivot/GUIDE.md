@@ -140,6 +140,10 @@ You always have the final say. On the **Overrule** page you can:
 
 The **stop-loss can never be switched off** — you can only move it. Everything you change is logged under "Your overrules".
 
+## Starting paper trading again
+
+**Settings → Data → Erase paper-trading data** deletes every paper trade, the paper equity curve and the Dashboard statistics, and starts the paper account again at your paper capital. You can also erase the shadow trades (signals the agents tracked but did not take). Live (real-money) trades, settings, the watchlist and scores are never touched.
+
 ## Going live (when you're ready)
 
 1. Paper-trade for at least 3–4 weeks. On the **Dashboard**, check the win rate, average win vs average loss, and whether grade A/A+ trades beat grade B.

@@ -162,6 +162,7 @@ export default function Settings({ query }) {
       <Group title="Data">
         <Row icon={Database} iconTone="sky" title="Stocks tracked" subtitle={`Nifty 500 list · history from ${data.historyFrom || '—'}`} right={<b className="num">{data.universeCount}</b>} />
         {!data.demo && <UploadNifty500 />}
+        <ErasePaper />
         {data.demo && (
           <Row
             title="Restart the demo"
@@ -204,6 +205,92 @@ export default function Settings({ query }) {
         </div>
       </Sheet>
     </div>
+  );
+}
+
+/** Erase every paper trade and start the paper account fresh. Live (real-money) data is never touched. */
+function ErasePaper() {
+  const [open, setOpen] = useState(false);
+  const [sum, setSum] = useState(null);
+  const [shadow, setShadow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+  const [err, setErr] = useState('');
+  const start = async () => {
+    setDone(null);
+    setErr('');
+    setOpen(true);
+    setSum(await api('/paper/summary').catch(() => null));
+  };
+  const erase = async () => {
+    setBusy(true);
+    setErr('');
+    try {
+      const r = await api('/paper/erase', { method: 'POST', body: { confirm: 'ERASE', includeShadow: shadow } });
+      setDone(r.erased);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <Row
+        title="Erase paper-trading data"
+        subtitle="Start the paper account fresh. Real (live) trades are never touched."
+        right={
+          <Button size="sm" tone="coralSoft" onClick={start}>
+            Erase…
+          </Button>
+        }
+      />
+      <Sheet open={open} onClose={() => setOpen(false)} title="Erase paper-trading data?">
+        {done ? (
+          <>
+            <p className="text-[18px]">✅ Done. The paper account starts again at <b>₹{Number(sum?.capital || 0).toLocaleString('en-IN')}</b>.</p>
+            <p className="text-ink2 mt-2">The agents keep running and will paper-trade the next breakout as usual.</p>
+            <Button className="w-full mt-6" size="lg" onClick={() => location.reload()}>
+              Done
+            </Button>
+          </>
+        ) : !sum ? (
+          <Spinner />
+        ) : (
+          <>
+            <p className="text-[17px]">This permanently deletes:</p>
+            <ul className="mt-2 space-y-1.5 text-[17px]">
+              <li>
+                • <b>{sum.open}</b> open and <b>{sum.closed}</b> closed paper trades, with their orders and fills
+              </li>
+              <li>• The paper equity curve and Dashboard statistics</li>
+              {sum.pending > 0 && (
+                <li>
+                  • <b>{sum.pending}</b> buy {sum.pending === 1 ? 'request' : 'requests'} waiting for your approval
+                </li>
+              )}
+            </ul>
+            <div className="flex items-center gap-3 mt-5 bg-card rounded-2xl px-4 py-3">
+              <div className="flex-1">
+                <div className="font-semibold">Also erase shadow trades ({sum.shadow})</div>
+                <div className="text-ink2 text-[14px] leading-snug">Signals the agents tracked but didn't take, and the breakout-check measurements on the Dashboard.</div>
+              </div>
+              <Toggle checked={shadow} onChange={setShadow} label="Also erase shadow trades" />
+            </div>
+            <p className="text-ink2 text-[15px] mt-4">Kept: settings, the watchlist, scores, the activity log and any live (real-money) trades.</p>
+            {err && <div className="text-coral font-semibold mt-3">{err}</div>}
+            <div className="grid grid-cols-2 gap-3 mt-6">
+              <Button tone="soft" size="lg" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button tone="coral" size="lg" loading={busy} onClick={erase}>
+                Erase
+              </Button>
+            </div>
+          </>
+        )}
+      </Sheet>
+    </>
   );
 }
 

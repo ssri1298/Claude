@@ -602,6 +602,44 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
     }),
   );
 
+  // ------------------------------------------------------------ erase paper-trading data
+  const paperCounts = () => ({
+    open: db.get("SELECT COUNT(*) AS n FROM positions WHERE kind = 'paper' AND status = 'open'").n,
+    closed: db.get("SELECT COUNT(*) AS n FROM positions WHERE kind = 'paper' AND status = 'closed'").n,
+    shadow: db.get("SELECT COUNT(*) AS n FROM positions WHERE kind IN ('shadow','probe')").n,
+    pending: db.get("SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND json_extract(data, '$.kind') = 'paper'").n,
+  });
+  app.get('/api/paper/summary', wrap(() => ({ ...paperCounts(), capital: ctx.settings.paperCapital })));
+  app.post(
+    '/api/paper/erase',
+    wrap((req) => {
+      if (req.body?.confirm !== 'ERASE') throw Object.assign(new Error('Confirmation missing'), { status: 400 });
+      const kinds = req.body.includeShadow ? ['paper', 'shadow', 'probe'] : ['paper'];
+      const before = paperCounts();
+      const q = kinds.map(() => '?').join(',');
+      db.tx(() => {
+        const ids = db.all(`SELECT id FROM positions WHERE kind IN (${q})`, ...kinds).map((r) => r.id);
+        for (const id of ids) {
+          db.run('DELETE FROM fills WHERE position_id = ?', id);
+          db.run('DELETE FROM orders WHERE position_id = ?', id);
+        }
+        db.run(`DELETE FROM positions WHERE kind IN (${q})`, ...kinds);
+        db.run("DELETE FROM orders WHERE mode = 'paper'");
+        db.run("DELETE FROM equity WHERE kind = 'paper'");
+        db.run("DELETE FROM approvals WHERE json_extract(data, '$.kind') = 'paper'");
+        db.run("UPDATE watchlist SET status = 'watching', note = NULL WHERE status = 'triggered' AND symbol NOT IN (SELECT symbol FROM positions WHERE kind = 'live' AND status = 'open')");
+      });
+      pruneHolds(db, db.all("SELECT id FROM positions WHERE status = 'open'").map((r) => r.id));
+      ctx.bus.log(
+        'You',
+        `You erased all paper-trading data (${before.open} open and ${before.closed} closed paper trades${req.body.includeShadow ? `, ${before.shadow} shadow/measurement trades` : ''}). The paper account starts again at ₹${Number(ctx.settings.paperCapital).toLocaleString('en-IN')}.`,
+        { level: 'warn' },
+      );
+      ctx.bus.push('positions', {});
+      return { ok: true, erased: before };
+    }),
+  );
+
   // ------------------------------------------------------------ demo controls
   app.post(
     '/api/demo/control',
