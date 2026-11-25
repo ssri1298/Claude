@@ -1,13 +1,27 @@
 import { useEffect, useState } from 'react';
-import { ShieldCheck, Wallet, Target, Repeat, KeyRound, Send, Bell, Palette, Database, LogOut, Copy, Check, CalendarOff, Zap, TrendingUp, Download, Loader2 } from 'lucide-react';
-import { api, useApi, applyTheme, getTheme } from '../lib.js';
+import { ShieldCheck, Wallet, Target, Repeat, KeyRound, Send, Bell, Palette, Database, LogOut, Copy, Check, CalendarOff, Zap, TrendingUp, Download, Loader2, ChevronLeft, Timer, Activity } from 'lucide-react';
+import { api, useApi, applyTheme, getTheme, go } from '../lib.js';
 import { LargeTitle, List, Row, Toggle, Segmented, NumberField, TextField, Button, Spinner, Sheet, Pill } from '../components/ui.jsx';
 
-export default function Settings({ query }) {
+const SECTIONS = [
+  { key: 'trading', title: 'Trading', icon: Zap, tone: 'lav', blurb: 'Paper or live, approvals, pausing' },
+  { key: 'capital', title: 'Capital & position size', icon: Wallet, tone: 'mint', blurb: 'How much goes into each trade' },
+  { key: 'buying', title: 'Buying rules', icon: TrendingUp, tone: 'sky', blurb: 'Score, volume, breakout checks, market filter, re-entry' },
+  { key: 'selling', title: 'Selling rules', icon: Target, tone: 'coral', blurb: 'Stop-loss, profit taking, trailing, early exits' },
+  { key: 'zerodha', title: 'Zerodha', icon: KeyRound, tone: 'butter', blurb: 'Kite Connect keys and daily login', live: true },
+  { key: 'notifications', title: 'Notifications', icon: Bell, tone: 'peach', blurb: 'App notifications, Telegram, what to send, login reminder' },
+  { key: 'holidays', title: 'Market holidays', icon: CalendarOff, tone: 'rose', blurb: 'Days the agents rest' },
+  { key: 'app', title: 'App & data', icon: Palette, tone: 'gray', blurb: 'Theme, updates, stock list, erase paper data' },
+];
+
+export default function Settings({ query, section }) {
   const { data, reload } = useApi('/settings', { events: ['settings', 'kite'] });
   const [saving, setSaving] = useState(false);
   const [liveAsk, setLiveAsk] = useState(false);
   const [msg, setMsg] = useState(query.kite && query.kite !== 'connected' ? `Kite login: ${query.kite}` : '');
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [section]);
   if (!data) return <Spinner />;
   const s = data.settings;
   const r = s.rules;
@@ -27,12 +41,48 @@ export default function Settings({ query }) {
   const rule = (k) => (v) => save({ rules: { [k]: v } });
   const c = r.confirm;
   const conf = (patch) => save({ rules: { confirm: patch } });
+  const sec = SECTIONS.find((x) => x.key === section);
+
+  // ---- Settings home: one row per topic, with the current values at a glance
+  if (!sec) {
+    const summary = {
+      trading: `${s.tradingMode === 'live' ? 'Live money' : 'Paper'} · ${s.confirmTrades ? 'asks before buying' : 'fully automatic'}${s.agentsPaused ? ' · buys paused' : ''}`,
+      capital: `${r.positionPct}% per trade · max ${r.maxPositions} positions`,
+      buying: `Score ≥ ${r.minScore} · volume ≥ ${r.minVolPace}× · ${c.enabled ? 'breakout checks on' : 'no breakout checks'}`,
+      selling: `Stop ≤ ${r.maxStopPct}% · ⅓ at +${r.partialAtPct}% · ${{ ema21: '21-EMA trail', pct10: '10% trail', sma50: '50-DMA trail', none: 'no trail' }[r.trailMethod]}`,
+      zerodha: data.kite?.connected ? 'Connected today' : data.secrets?.kiteApiKey ? 'Not logged in today' : 'Not set up',
+      notifications: [data.push?.devices ? 'App' : null, data.telegram?.paired ? 'Telegram' : null].filter(Boolean).join(' + ') || 'Not set up',
+      holidays: `${(s.holidays || []).length} holidays`,
+      app: { system: 'Auto theme', light: 'Light theme', dark: 'Dark theme' }[getTheme()],
+    };
+    return (
+      <div className="space-y-6 pb-10">
+        <LargeTitle title="Settings" right={saving ? <Pill tone="lav">Saving…</Pill> : null} />
+        {msg && <div className="bg-coral-soft text-coral rounded-2xl px-4 py-3 font-semibold">{msg}</div>}
+        <List>
+          {SECTIONS.filter((x) => !(x.live && data.demo)).map((x) => (
+            <Row key={x.key} icon={x.icon} iconTone={x.tone} title={x.title} subtitle={summary[x.key] || x.blurb} chevron onClick={() => go(`/settings/${x.key}`)} />
+          ))}
+        </List>
+        <List>
+          <Row icon={LogOut} iconTone="gray" title="Log out" onClick={() => api('/auth/logout', { method: 'POST' }).then(() => location.reload())} />
+        </List>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-7 pb-10">
-      <LargeTitle title="Settings" right={saving ? <Pill tone="lav">Saving…</Pill> : null} />
+      <div>
+        <button onClick={() => go('/settings')} className="flex items-center gap-1 text-accent font-semibold text-[17px] pt-2 -ml-1">
+          <ChevronLeft size={24} /> Settings
+        </button>
+        <LargeTitle title={sec.title} subtitle={sec.blurb} right={saving ? <Pill tone="lav">Saving…</Pill> : null} />
+      </div>
       {msg && <div className="bg-coral-soft text-coral rounded-2xl px-4 py-3 font-semibold">{msg}</div>}
 
+      {section === 'trading' && (
+        <>
       <Group title="Trading">
         <Row
           icon={Zap}
@@ -46,6 +96,11 @@ export default function Settings({ query }) {
         <Row title="Pause new buys" subtitle="Open positions stay protected" right={<Toggle checked={s.agentsPaused} onChange={(v) => save({ agentsPaused: v })} />} />
       </Group>
 
+        </>
+      )}
+
+      {section === 'capital' && (
+        <>
       <Group title="Capital" footer="Each new trade uses this share of your total capital. If there is not enough free cash, the signal is saved as a shadow trade and the setup stays on the watchlist.">
         <Row icon={Wallet} iconTone="mint" title="Capital source" right={<Segmented size="sm" value={s.capitalSource} onChange={(v) => save({ capitalSource: v })} options={[{ value: 'kite', label: 'Kite funds' }, { value: 'fixed', label: 'Fixed' }]} />} />
         {s.capitalSource === 'fixed' && <Row title="Capital for Pivot" right={<NumberField value={s.fixedCapital} onChange={(v) => save({ fixedCapital: v })} step={10000} suffix="₹" width="w-36" />} />}
@@ -55,7 +110,51 @@ export default function Settings({ query }) {
         <Row title="Maximum per industry" right={<NumberField value={r.maxPerIndustry} onChange={rule('maxPerIndustry')} width="w-20" />} />
       </Group>
 
-      <Group title="Stop-loss & profit taking">
+        </>
+      )}
+
+      {section === 'buying' && (
+        <>
+      <Group title="Entry rules">
+        <Row icon={TrendingUp} iconTone="mint" title="Minimum setup score" subtitle="65 = grade B · 75 = A · 85 = A+" right={<NumberField value={r.minScore} onChange={rule('minScore')} width="w-20" />} />
+        <Row title="Buy zone above pivot" subtitle="Never chase further than this" right={<NumberField value={r.buyZonePct} onChange={rule('buyZonePct')} suffix="%" step={0.5} width="w-20" />} />
+        <Row title="Breakout volume" subtitle="Projected volume vs 50-day average" right={<NumberField value={r.minVolPace} onChange={rule('minVolPace')} suffix="×" step={0.1} width="w-20" />} />
+      </Group>
+
+      <Group title="Breakout confirmation" footer="The first tick above the pivot only 'arms' a stock. Pivot buys once these checks pass. Every breakout is also tracked from its first tick, so the Dashboard can show which checks really help.">
+        <Row icon={ShieldCheck} iconTone="lav" title="Confirm breakouts" subtitle="Off = buy on the first tick above the pivot" right={<Toggle checked={c.enabled} onChange={(v) => conf({ enabled: v })} />} />
+        {c.enabled && (
+          <>
+            <Row title="15-min candle closes above the pivot" subtitle="Filters quick pokes that fail" right={<Toggle checked={c.holdCandle} onChange={(v) => conf({ holdCandle: v })} />} />
+            <Row title="Price above VWAP" subtitle="Today's average traded price" right={<Toggle checked={c.vwap} onChange={(v) => conf({ vwap: v })} />} />
+            <Row title="Top third of today's range" subtitle="No long upper wick" right={<Toggle checked={c.rangePos} onChange={(v) => conf({ rangePos: v })} />} />
+            <Row title="Gap-up rule" subtitle="Opened above the pivot → wait for the 30-min high to break" right={<Toggle checked={c.gapRule} onChange={(v) => conf({ gapRule: v })} />} />
+            <Row title="Clear the pivot by" right={<NumberField value={c.pivotBufferPct} onChange={(v) => conf({ pivotBufferPct: v })} suffix="%" step={0.1} width="w-20" />} />
+          </>
+        )}
+      </Group>
+
+      <Group title="Two-stage buy" footer="Half the position is bought at the confirmed breakout; the other half at 3:15 pm only if it is still above the pivot with good volume.">
+        <Row icon={Zap} iconTone="butter" title="Two-stage buy" right={<Toggle checked={r.twoStage.enabled} onChange={(v) => save({ rules: { twoStage: { enabled: v } } })} />} />
+        {r.twoStage.enabled && <Row title="First part" right={<NumberField value={Math.round(r.twoStage.firstFraction * 100)} onChange={(v) => save({ rules: { twoStage: { firstFraction: Math.min(0.9, Math.max(0.1, v / 100)) } } })} suffix="%" width="w-20" />} />}
+      </Group>
+      <Group title="Market filter" footer="Based on the Nifty 50 trend and how many Nifty 500 stocks are above their 50-day average.">
+        <Row icon={Activity} iconTone="butter" title="In a market correction">
+          <Segmented size="sm" className="mt-2" value={s.marketFilter} onChange={(v) => save({ marketFilter: v })} options={[{ value: 'pause', label: 'Pause new buys' }, { value: 'half', label: 'Half size' }, { value: 'off', label: 'Ignore' }]} />
+        </Row>
+      </Group>
+      <Group title="Re-entry" footer="If a stock stops you out but reclaims its pivot on strong volume within the window, Pivot proposes buying it again.">
+        <Row icon={Repeat} iconTone="sky" title="Re-buy after a stop-out" right={<Toggle checked={r.reentry.enabled} onChange={(v) => save({ rules: { reentry: { enabled: v } } })} />} />
+        <Row title="Window" right={<NumberField value={r.reentry.windowDays} onChange={(v) => save({ rules: { reentry: { windowDays: v } } })} suffix="days" width="w-20" />} />
+        <Row title="Max re-entries per setup" right={<NumberField value={r.reentry.maxPerSetup} onChange={(v) => save({ rules: { reentry: { maxPerSetup: v } } })} width="w-20" />} />
+      </Group>
+
+        </>
+      )}
+
+      {section === 'selling' && (
+        <>
+      <Group title="Stop-loss & profit taking" footer="The stop-loss always runs, every second, during market hours.">
         <Row icon={Target} iconTone="coral" title="Maximum stop" subtitle="Chart stop below the last contraction, never wider than this" right={<NumberField value={r.maxStopPct} onChange={rule('maxStopPct')} suffix="%" step={0.5} width="w-20" />} />
         <Row title="Minimum stop" subtitle="Very tight chart stops are widened to this" right={<NumberField value={r.minStopPct} onChange={rule('minStopPct')} suffix="%" step={0.5} width="w-20" />} />
         <Row title="If the chart stop is wider" right={<Segmented size="sm" value={r.wideStopAction} onChange={rule('wideStopAction')} options={[{ value: 'skip', label: 'Skip trade' }, { value: 'cap', label: `Use ${r.maxStopPct}%` }]} />} />
@@ -78,48 +177,22 @@ export default function Settings({ query }) {
         <Row title="Backup stop at Zerodha (GTT)" subtitle="Sells even if the server goes down" right={<Toggle checked={s.backupGtt} onChange={(v) => save({ backupGtt: v })} />} />
       </Group>
 
-      <Group title="Entry rules">
-        <Row icon={TrendingUp} iconTone="mint" title="Minimum setup score" subtitle="65 = grade B · 75 = A · 85 = A+" right={<NumberField value={r.minScore} onChange={rule('minScore')} width="w-20" />} />
-        <Row title="Buy zone above pivot" subtitle="Never chase further than this" right={<NumberField value={r.buyZonePct} onChange={rule('buyZonePct')} suffix="%" step={0.5} width="w-20" />} />
-        <Row title="Breakout volume" subtitle="Projected volume vs 50-day average" right={<NumberField value={r.minVolPace} onChange={rule('minVolPace')} suffix="×" step={0.1} width="w-20" />} />
-        <Row title="In a market correction">
-          <Segmented size="sm" className="mt-2" value={s.marketFilter} onChange={(v) => save({ marketFilter: v })} options={[{ value: 'pause', label: 'Pause new buys' }, { value: 'half', label: 'Half size' }, { value: 'off', label: 'Ignore' }]} />
-        </Row>
-      </Group>
-
-      <Group title="Breakout confirmation" footer="The first tick above the pivot only 'arms' a stock. Pivot buys once these checks pass. Every breakout is also tracked from its first tick, so the Dashboard can show which checks really help.">
-        <Row icon={ShieldCheck} iconTone="lav" title="Confirm breakouts" subtitle="Off = buy on the first tick above the pivot" right={<Toggle checked={c.enabled} onChange={(v) => conf({ enabled: v })} />} />
-        {c.enabled && (
-          <>
-            <Row title="15-min candle closes above the pivot" subtitle="Filters quick pokes that fail" right={<Toggle checked={c.holdCandle} onChange={(v) => conf({ holdCandle: v })} />} />
-            <Row title="Price above VWAP" subtitle="Today's average traded price" right={<Toggle checked={c.vwap} onChange={(v) => conf({ vwap: v })} />} />
-            <Row title="Top third of today's range" subtitle="No long upper wick" right={<Toggle checked={c.rangePos} onChange={(v) => conf({ rangePos: v })} />} />
-            <Row title="Gap-up rule" subtitle="Opened above the pivot → wait for the 30-min high to break" right={<Toggle checked={c.gapRule} onChange={(v) => conf({ gapRule: v })} />} />
-            <Row title="Clear the pivot by" right={<NumberField value={c.pivotBufferPct} onChange={(v) => conf({ pivotBufferPct: v })} suffix="%" step={0.1} width="w-20" />} />
-          </>
-        )}
-      </Group>
-
-      <Group title="Two-stage buy, failed breakouts & time exit" footer="A trade that goes nowhere ties up capital: the time exit sells it at the close if it has neither hit the stop nor the +10% target after the set number of trading days. Half the position is bought at the confirmed breakout; the other half at 3:15 pm only if it is still above the pivot with good volume. A new buy that closes back below its pivot is sold at the close (usually a 1–3% loss instead of the full stop).">
-        <Row icon={Zap} iconTone="butter" title="Two-stage buy" right={<Toggle checked={r.twoStage.enabled} onChange={(v) => save({ rules: { twoStage: { enabled: v } } })} />} />
-        {r.twoStage.enabled && <Row title="First part" right={<NumberField value={Math.round(r.twoStage.firstFraction * 100)} onChange={(v) => save({ rules: { twoStage: { firstFraction: Math.min(0.9, Math.max(0.1, v / 100)) } } })} suffix="%" width="w-20" />} />}
-        <Row title="Sell failed breakouts early" subtitle="Close back below the pivot" right={<Toggle checked={r.failedExit.enabled} onChange={(v) => save({ rules: { failedExit: { enabled: v } } })} />} />
+      <Group title="Early exits" footer="A new buy that closes back below its pivot is sold at the close (usually a 1–3% loss instead of the full stop). A trade that goes nowhere ties up capital: the time exit sells it at the close if it has hit neither the stop nor the profit target in time.">
+        <Row icon={Timer} iconTone="peach" title="Sell failed breakouts early" subtitle="Close back below the pivot" right={<Toggle checked={r.failedExit.enabled} onChange={(v) => save({ rules: { failedExit: { enabled: v } } })} />} />
         {r.failedExit.enabled && <Row title="Within the first" right={<NumberField value={r.failedExit.days} onChange={(v) => save({ rules: { failedExit: { days: v } } })} suffix="days" width="w-20" />} />}
         <Row title="Time exit" subtitle={`Sell at the close if neither the stop nor +${r.partialAtPct}% is hit in time`} right={<Toggle checked={!!r.timeExit?.enabled} onChange={(v) => save({ rules: { timeExit: { enabled: v } } })} />} />
         {r.timeExit?.enabled && <Row title="After" right={<NumberField value={r.timeExit.days} onChange={(v) => save({ rules: { timeExit: { days: Math.max(1, Math.min(60, v)) } } })} suffix="trading days" width="w-20" />} />}
       </Group>
+        </>
+      )}
 
-      <Group title="Re-entry" footer="If a stock stops you out but reclaims its pivot on strong volume within the window, Pivot proposes buying it again.">
-        <Row icon={Repeat} iconTone="sky" title="Re-buy after a stop-out" right={<Toggle checked={r.reentry.enabled} onChange={(v) => save({ rules: { reentry: { enabled: v } } })} />} />
-        <Row title="Window" right={<NumberField value={r.reentry.windowDays} onChange={(v) => save({ rules: { reentry: { windowDays: v } } })} suffix="days" width="w-20" />} />
-        <Row title="Max re-entries per setup" right={<NumberField value={r.reentry.maxPerSetup} onChange={(v) => save({ rules: { reentry: { maxPerSetup: v } } })} width="w-20" />} />
-      </Group>
+      {section === 'zerodha' && (data.demo ? <p className="text-ink2 px-1">Zerodha is not used in demo mode.</p> : <ZerodhaGroup data={data} reload={reload} />)}
 
-      {!data.demo && <ZerodhaGroup data={data} reload={reload} />}
-      <PushGroup />
-      <TelegramGroup data={data} reload={reload} />
-
-      <Group title="What to notify me about">
+      {section === 'notifications' && (
+        <>
+          <PushGroup />
+          <TelegramGroup data={data} reload={reload} />
+      <Group title="What to notify me about" footer="Sent to the Pivot app and Telegram (whichever you have set up). Morning and evening reports are always saved on the Reports page.">
         {[
           ['login', 'Morning Kite login reminder'],
           ['proposals', 'Trade approvals'],
@@ -151,14 +224,17 @@ export default function Settings({ query }) {
         />
       </Group>
 
-      <HolidaysGroup s={s} save={save} names={data.holidayNames} sync={data.holidaySync} reload={reload} />
+        </>
+      )}
 
-      <Group title="Appearance">
-        <Row icon={Palette} iconTone="rose" title="Theme" right={<ThemePicker />} />
-      </Group>
+      {section === 'holidays' && <HolidaysGroup s={s} save={save} names={data.holidayNames} sync={data.holidaySync} reload={reload} />}
 
-      <AppUpdates />
-
+      {section === 'app' && (
+        <>
+          <Group title="Appearance">
+            <Row icon={Palette} iconTone="rose" title="Theme" right={<ThemePicker />} />
+          </Group>
+          <AppUpdates />
       <Group title="Data">
         <Row icon={Database} iconTone="sky" title="Stocks tracked" subtitle={`Nifty 500 list · history from ${data.historyFrom || '—'}`} right={<b className="num">{data.universeCount}</b>} />
         {!data.demo && <UploadNifty500 />}
@@ -176,9 +252,8 @@ export default function Settings({ query }) {
         )}
       </Group>
 
-      <List>
-        <Row icon={LogOut} iconTone="gray" title="Log out" onClick={() => api('/auth/logout', { method: 'POST' }).then(() => location.reload())} />
-      </List>
+        </>
+      )}
 
       <Sheet open={liveAsk} onClose={() => setLiveAsk(false)} title="Switch to live trading?">
         <ul className="space-y-2.5 text-[17px]">

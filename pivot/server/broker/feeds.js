@@ -26,7 +26,7 @@ export async function fetchNifty500() {
       lastErr = e;
     }
   }
-  throw new Error(`Could not download the Nifty 500 list from NSE (${lastErr?.message}). Upload it in Settings → Data.`);
+  throw new Error(`Could not download the Nifty 500 list from NSE (${lastErr?.message}). Upload it in Settings → App & data.`);
 }
 
 export function parseNifty500Csv(text) {
@@ -64,7 +64,7 @@ export class KiteFeed extends EventEmitter {
         list = parseNifty500Csv(manual);
         this.log?.(`Using the Nifty 500 list you uploaded (${list.length} stocks)`);
       } else if (cached.length) {
-        this.log?.('Could not refresh the Nifty 500 list from NSE — using the saved list. You can upload a fresh one in Settings → Data.', 'warn');
+        this.log?.('Could not refresh the Nifty 500 list from NSE — using the saved list. You can upload a fresh one in Settings → App & data.', 'warn');
         return cached;
       } else throw e;
     }

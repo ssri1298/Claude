@@ -34,20 +34,20 @@ export default function Today() {
       {d.demo && <DemoBar state={d.demoState} />}
       {!d.kite.connected && <LoginCard configured={d.kite.configured} />}
       {d.update?.state === 'available' && (
-        <Card className="p-4 sm:p-5 flex items-center gap-4 ring-1 ring-lav/30" onClick={() => go('/settings')}>
+        <Card className="p-4 sm:p-5 flex items-center gap-4 ring-1 ring-lav/30" onClick={() => go('/settings/app')}>
           <span className="h-11 w-11 shrink-0 rounded-2xl bg-lav-soft text-lav flex items-center justify-center text-[22px]">⬆︎</span>
           <div className="flex-1">
             <div className="font-bold text-[17px]">A new version of Pivot is ready</div>
-            <div className="text-ink2 text-[15px]">Tap to update from Settings → App updates</div>
+            <div className="text-ink2 text-[15px]">Tap to update from Settings → App & data</div>
           </div>
         </Card>
       )}
       {!d.demo && !d.push?.devices && !d.telegram.paired && (
-        <Card className="p-5 flex flex-col sm:flex-row sm:items-center gap-4" onClick={() => go('/settings')}>
+        <Card className="p-5 flex flex-col sm:flex-row sm:items-center gap-4" onClick={() => go('/settings/notifications')}>
           <span className="h-12 w-12 shrink-0 rounded-2xl bg-mint-soft text-mint flex items-center justify-center text-[24px]">🔔</span>
           <div className="flex-1">
             <div className="text-[18px] font-bold">Turn on notifications</div>
-            <div className="text-ink2 text-[15px]">So you never miss a buy signal waiting for your approval. Settings → Pivot app notifications.</div>
+            <div className="text-ink2 text-[15px]">So you never miss a buy signal waiting for your approval. Settings → Notifications.</div>
           </div>
         </Card>
       )}
@@ -174,7 +174,7 @@ function LoginCard({ configured }) {
           Log in to Kite
         </Button>
       ) : (
-        <Button onClick={() => go('/settings')} tone="soft">
+        <Button onClick={() => go('/settings/zerodha')} tone="soft">
           Open Settings
         </Button>
       )}

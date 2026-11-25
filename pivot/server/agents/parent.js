@@ -13,6 +13,7 @@ import { Executor } from './executor.js';
 import { ist, toMinutes, MARKET, isTradingDay, hhmm } from '../core/time.js';
 import { round } from '../engine/vcp.js';
 import { esc } from '../notify/telegram.js';
+import { buildMorning, buildEvening, saveReport, morningText, eveningText } from './reports.js';
 
 const NAME = 'Parent';
 const inr = (x) => '₹' + Math.round(Number(x)).toLocaleString('en-IN');
@@ -168,7 +169,7 @@ export class Parent {
     }
     this.executor.expireApprovals();
     if (t.minutes - MARKET.open === 30 && !this.ctx.feed.status().lastTick && this.ctx.feed.kind === 'kite') {
-      this.log('No live prices received 30 minutes after the open — is today a market holiday? Add it in Settings → Holidays if so.', 'warn');
+      this.log('No live prices received 30 minutes after the open — is today a market holiday? Add it in Settings → Market holidays if so.', 'warn');
     }
     this.ctx.bus.push('scan', { at: t.hhmm, ...this.screener.status.live });
   }
@@ -184,40 +185,18 @@ export class Parent {
   }
 
   async morningBrief() {
-    const top = this.analyst.topSetups(6);
-    const m = this.ctx.market;
-    const c = this.screener.status.counts;
-    const cap = await this.executor.capital();
-    const lines = [
-      `☀️ <b>Morning brief</b> · ${this.ctx.day.date}`,
-      `Market: <b>${esc(m?.label || 'Unknown')}</b>${m?.regime === 'downtrend' && this.ctx.settings.marketFilter === 'pause' ? ' — new buys paused' : ''}`,
-      `${c.trendPass} stocks pass the trend template · ${c.setups} VCP setups`,
-      `Capital ${inr(cap.equity)} · free cash ${inr(cap.cash)} · ${this.executor.openPositions().length} open positions`,
-      '',
-      top.length ? '<b>Top setups</b>' : 'No high-quality setups today.',
-      ...top.map((a, i) => `${i + 1}. <b>${esc(a.symbol)}</b> ${a.grade} (${a.score}) · pivot ₹${a.vcp.pivot} · ${round(Math.abs(a.vcp.distToPivotPct), 1)}% away`),
-    ];
-    this.log(`Morning brief ready — ${top.length} top setups, market ${m?.label}`);
-    this.ctx.notify?.('morningBrief', lines.join('\n'));
+    const r = await buildMorning(this.ctx);
+    saveReport(this.ctx.db, r);
+    this.log(`Morning brief ready — ${r.top.length} top setups, market ${r.market.label}. Full report on the Reports page.`);
+    this.ctx.bus.push('report', { type: 'morning', date: r.date });
+    this.ctx.notify?.('morningBrief', morningText(r), this.ctx.publicUrl ? [[{ text: 'Open full report', url: `${this.ctx.publicUrl}/#/reports` }]] : undefined);
   }
 
   async eveningReport() {
-    const { db } = this.ctx;
-    const date = this.ctx.day.date;
-    const kind = this.executor.mode;
-    const fills = db.all("SELECT f.*, p.symbol, p.kind FROM fills f JOIN positions p ON p.id = f.position_id WHERE f.ts >= ? AND p.kind = ?", date, kind);
-    const sigs = db.all('SELECT status, COUNT(*) AS n FROM signals WHERE date = ? GROUP BY status', date);
-    const cap = await this.executor.capital();
-    const closedToday = db.all("SELECT * FROM positions WHERE kind = ? AND exit_date = ?", kind, date);
-    const realizedToday = closedToday.reduce((s, p) => s + p.realized, 0);
-    const lines = [
-      `🌙 <b>Evening report</b> · ${date}${kind === 'paper' ? ' <i>[paper]</i>' : ''}`,
-      `Equity ${inr(cap.equity)} · open P&L ${inr(cap.openPnl)} · free cash ${inr(cap.cash)}`,
-      `Buys: ${fills.filter((f) => f.side === 'BUY').length} · Sells: ${fills.filter((f) => f.side === 'SELL').length} · Closed trades P&L ${inr(realizedToday)}`,
-      `Signals: ${sigs.map((s) => `${s.n} ${s.status.replace(/_/g, ' ')}`).join(', ') || 'none'}`,
-      `Watching ${db.get("SELECT COUNT(*) AS n FROM watchlist WHERE status = 'watching'").n} setups for tomorrow.`,
-    ];
-    this.log('Day complete — evening report sent', 'success');
-    this.ctx.notify?.('eveningReport', lines.join('\n'));
+    const r = await buildEvening(this.ctx);
+    saveReport(this.ctx.db, r);
+    this.log('Day complete — evening report saved on the Reports page', 'success');
+    this.ctx.bus.push('report', { type: 'evening', date: r.date });
+    this.ctx.notify?.('eveningReport', eveningText(r), this.ctx.publicUrl ? [[{ text: 'Open full report', url: `${this.ctx.publicUrl}/#/reports` }]] : undefined);
   }
 }

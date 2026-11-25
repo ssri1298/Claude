@@ -147,7 +147,7 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
     const flat = (buttons || []).flat();
     const approvalId = Number(flat.find((b) => b.callback_data?.startsWith('approve:'))?.callback_data.split(':')[1]) || null;
     const link = flat.find((b) => b.url)?.url;
-    const url = type === 'login' ? '/api/kite/login' : approvalId ? '/#/' : ['fills', 'exits'].includes(type) ? '/#/trades' : link?.startsWith(ctx.publicUrl || '\0') ? link.slice(ctx.publicUrl.length) || '/' : '/';
+    const url = type === 'login' ? '/api/kite/login' : approvalId ? '/#/' : ['fills', 'exits'].includes(type) ? '/#/trades' : ['morningBrief', 'eveningReport'].includes(type) ? '/#/reports' : link?.startsWith(ctx.publicUrl || '\0') ? link.slice(ctx.publicUrl.length) || '/' : '/';
     const { title, body } = toPlain(text);
     ctx.webpush
       .send({ title, body, url, tag: approvalId ? `approval-${approvalId}` : type, approvalId, urgent: !!approvalId || type === 'exits' || type === 'login' })

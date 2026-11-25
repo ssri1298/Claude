@@ -81,7 +81,7 @@ Open the app address on your phone and computer, then **choose a password**.
 
 1. In Telegram, search for **@BotFather** → send `/newbot` → give it a name (e.g. *My Pivot*) and a username ending in `bot`.
 2. BotFather replies with a **token**. Copy it.
-3. In Pivot: **Settings → Telegram** → paste the token → **Save token** → **Pair**.
+3. In Pivot: **Settings → Notifications → Telegram** → paste the token → **Save token** → **Pair**.
 4. Pivot shows a message like `/start 482913`. Send exactly that to your new bot in Telegram.
 5. Tap **Test** in Pivot and you should receive a message.
 
@@ -94,12 +94,12 @@ Pivot can notify your phone directly, without Telegram.
 **iPhone** (iOS 16.4 or newer):
 1. Open your Pivot address in **Safari** → **Share** → **Add to Home Screen** → **Add**.
 2. Open Pivot **from the new home-screen icon**.
-3. Go to **Settings → Pivot app notifications → Turn on**, then tap **Allow**.
+3. Go to **Settings → Notifications → Pivot app notifications → Turn on**, then tap **Allow**.
 4. A test notification arrives. Buy signals open Pivot's approval card when tapped, where you choose **Approve** or **Reject**.
 
-**Android:** open Pivot in Chrome → **Settings → Pivot app notifications → Turn on**. Buy signals have **Approve / Reject** buttons right in the notification.
+**Android:** open Pivot in Chrome → **Settings → Notifications → Pivot app notifications → Turn on**. Buy signals have **Approve / Reject** buttons right in the notification.
 
-You get the 8:00 am Kite login reminder, buy signals, fills, stops, partial profits, and the morning and evening reports. Choose which ones under **Settings → What to notify me about**.
+You get the 8:00 am Kite login reminder, buy signals, fills, stops, partial profits, and the morning and evening reports. Choose which ones under **Settings → Notifications → What to notify me about**.
 
 ---
 
@@ -128,6 +128,14 @@ You get the 8:00 am Kite login reminder, buy signals, fills, stops, partial prof
 - **Profit**: sell one third at +10%, move the stop to your buy price, then exit when a day closes below the 21-day EMA. You can sell or move the stop yourself at any time from **Trades**.
 - **Re-entry**: if you were stopped out and the stock reclaims its pivot on strong volume within 10 trading days, Pivot proposes buying it again (at most 2 times per setup).
 
+## Morning and evening reports (More → Reports)
+
+Every trading day Pivot writes a **morning brief** (08:30: market health, best setups, your positions and what could happen to them today) and an **evening report** (15:40: account value and today's change, every buy and sell, closed trades, which breakouts were bought or skipped and why, setups for tomorrow). They are kept on the **Reports** page — pick a day at the top. Tap **Refresh now** to rebuild today's report with the latest prices. The notification links straight to the full report.
+
+## Settings
+
+Settings is grouped by topic: **Trading**, **Capital & position size**, **Buying rules**, **Selling rules**, **Zerodha**, **Notifications**, **Market holidays** and **App & data**. Each row shows your current choices, so you can see your setup at a glance.
+
 ## Overruling the agents (More → Overrule)
 
 You always have the final say. On the **Overrule** page you can:
@@ -142,13 +150,13 @@ The **stop-loss can never be switched off** — you can only move it. Everything
 
 ## Starting paper trading again
 
-**Settings → Data → Erase paper-trading data** deletes every paper trade, the paper equity curve and the Dashboard statistics, and starts the paper account again at your paper capital. You can also erase the shadow trades (signals the agents tracked but did not take). Live (real-money) trades, settings, the watchlist and scores are never touched.
+**Settings → App & data → Erase paper-trading data** deletes every paper trade, the paper equity curve and the Dashboard statistics, and starts the paper account again at your paper capital. You can also erase the shadow trades (signals the agents tracked but did not take). Live (real-money) trades, settings, the watchlist and scores are never touched.
 
 ## Going live (when you're ready)
 
 1. Paper-trade for at least 3–4 weeks. On the **Dashboard**, check the win rate, average win vs average loss, and whether grade A/A+ trades beat grade B.
 2. Run a **Backtest**: first tap **Get 5 years of data** and wait a few minutes. Then choose **15-minute candles** and tap **Run backtest**. The first run downloads 15-minute candles from Zerodha for every breakout, which takes a few minutes per year tested. Later runs reuse them and are quick. The 15-minute replay checks every candle, so it knows whether the stop or the +10% target came first in a day.
-3. **Settings → Trading mode → Live.** Keep **Ask me before every buy** on. Later, if you want fully automatic trading, switch that off.
+3. **Settings → Trading → Trading mode → Live.** Keep **Ask me before every buy** on. Later, if you want fully automatic trading, switch that off.
 
 ## If something goes wrong
 
@@ -160,7 +168,7 @@ The **stop-loss can never be switched off** — you can only move it. Everything
 
 ### Updating Pivot
 
-From the app: **Settings → App updates → Check for updates → Update now**. Pivot also checks every day and shows **"A new version of Pivot is ready"** on the Today page. An update takes 2–5 minutes, and the page reloads by itself when Pivot is back. Your trades and settings are kept.
+From the app: **Settings → App & data → App updates → Check for updates → Update now**. Pivot also checks every day and shows **"A new version of Pivot is ready"** on the Today page. An update takes 2–5 minutes, and the page reloads by itself when Pivot is back. Your trades and settings are kept.
 
 If your GitHub repository is private, the first check asks for a **read-only GitHub token**. Create one at GitHub → Settings → Developer settings → Fine-grained tokens, for this repository with **Contents: Read-only**, and paste it into the box.
 

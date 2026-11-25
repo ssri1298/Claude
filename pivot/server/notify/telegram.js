@@ -104,11 +104,11 @@ export class Telegram {
       } else if (this.chatId) {
         await this.api('sendMessage', { chat_id: m.chat.id, text: 'This bot is already connected to another chat.' });
       } else if (expected && !code) {
-        await this.api('sendMessage', { chat_id: m.chat.id, text: '👋 Hi! Now send me the 6-digit code shown in Pivot → Settings → Telegram.' });
+        await this.api('sendMessage', { chat_id: m.chat.id, text: '👋 Hi! Now send me the 6-digit code shown in Pivot → Settings → Notifications → Telegram.' });
       } else if (!expected) {
-        await this.api('sendMessage', { chat_id: m.chat.id, text: '👋 Almost there! In Pivot, open Settings → Telegram and tap “Pair”. Then send me the 6-digit code it shows.' });
+        await this.api('sendMessage', { chat_id: m.chat.id, text: '👋 Almost there! In Pivot, open Settings → Notifications → Telegram and tap “Pair”. Then send me the 6-digit code it shows.' });
       } else {
-        await this.api('sendMessage', { chat_id: m.chat.id, text: '❌ That code does not match. Send the 6-digit code currently shown in Pivot → Settings → Telegram (tap “Pair” again for a new one).' });
+        await this.api('sendMessage', { chat_id: m.chat.id, text: '❌ That code does not match. Send the 6-digit code currently shown in Pivot → Settings → Notifications → Telegram (tap “Pair” again for a new one).' });
       }
       return;
     }

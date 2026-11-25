@@ -79,6 +79,10 @@ CREATE TABLE IF NOT EXISTS candles15_ranges (
 );
 CREATE INDEX IF NOT EXISTS c15r_token ON candles15_ranges(token);
 
+CREATE TABLE IF NOT EXISTS reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, type TEXT, ts TEXT, kind TEXT, data TEXT, UNIQUE(date, type)
+);
+
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, agent TEXT, level TEXT, message TEXT, data TEXT
 );

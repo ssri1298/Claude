@@ -10,6 +10,7 @@ import { round } from './engine/vcp.js';
 import { NIFTY50_TOKEN, parseNifty500Csv } from './broker/feeds.js';
 import { indexSnapshot, stockSnapshot } from './core/quotes.js';
 import { agentPulse } from './core/pulse.js';
+import { buildMorning, buildEvening, saveReport } from './agents/reports.js';
 import { pruneHolds, setBlocked, setCorrectionBuys, setPositionHold } from './core/overrides.js';
 import { CHECK_LABELS } from './engine/confirm.js';
 import { syncHolidays } from './core/holidays.js';
@@ -71,13 +72,13 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
   });
   app.get('/api/kite/callback', async (req, res) => {
     const { request_token, status } = req.query;
-    if (status !== 'success' || !request_token) return res.redirect('/#/settings?kite=failed');
+    if (status !== 'success' || !request_token) return res.redirect('/#/settings/zerodha?kite=failed');
     try {
       await ctx.completeKiteLogin(String(request_token));
       res.redirect('/#/?kite=connected');
     } catch (e) {
       ctx.bus.log('Parent', `Kite login failed: ${e.message}`, { level: 'error' });
-      res.redirect('/#/settings?kite=' + encodeURIComponent(e.message));
+      res.redirect('/#/settings/zerodha?kite=' + encodeURIComponent(e.message));
     }
   });
 
@@ -410,6 +411,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
       kiteRedirect: `${ctx.publicUrl || `${req.protocol}://${req.get('host')}`}/api/kite/callback`,
       telegram: { ok: !!ctx.telegram?.ok, bot: ctx.telegram?.botName, paired: !!ctx.secrets.telegramChatId, error: ctx.telegram?.error || null },
       kite: { connected: !!ctx.kiteSession.connected, userName: ctx.kiteSession.userName },
+      push: { devices: ctx.webpush?.subs?.().length || 0 },
       universeCount: db.get('SELECT COUNT(*) AS n FROM universe WHERE active = 1').n,
       historyFrom: db.get('SELECT MIN(date) AS d FROM candles').d,
       holidayNames: db.kvGet('holidayNames', {}),
@@ -599,6 +601,40 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
       const j = jobs.get(req.params.id);
       if (!j) throw Object.assign(new Error('Not found'), { status: 404 });
       return j;
+    }),
+  );
+
+  // ------------------------------------------------------------ morning & evening reports
+  app.get(
+    '/api/reports',
+    wrap((req) => {
+      const rows = db.all('SELECT date, type, ts FROM reports ORDER BY date DESC, type DESC LIMIT ?', Math.min(400, Number(req.query.limit) || 120));
+      const days = new Map();
+      for (const r of rows) {
+        const d = days.get(r.date) || { date: r.date };
+        d[r.type] = r.ts;
+        days.set(r.date, d);
+      }
+      return { today: ist(ctx.clock.now()).date, days: [...days.values()] };
+    }),
+  );
+  app.get(
+    '/api/reports/:date',
+    wrap((req) => {
+      const rows = db.all('SELECT type, ts, data FROM reports WHERE date = ?', req.params.date);
+      const out = { date: req.params.date };
+      for (const r of rows) out[r.type] = { ...JSON.parse(r.data), savedAt: r.ts };
+      return out;
+    }),
+  );
+  app.post(
+    '/api/reports/generate',
+    wrap(async (req) => {
+      const type = req.body?.type === 'evening' ? 'evening' : 'morning';
+      if (!ctx.analysis?.size) throw Object.assign(new Error('The Screener has not analysed the market yet — try again after the morning scan'), { status: 400 });
+      const r = type === 'evening' ? await buildEvening(ctx) : await buildMorning(ctx);
+      saveReport(db, r);
+      return { ok: true, date: r.date };
     }),
   );
 

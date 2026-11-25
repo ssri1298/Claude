@@ -398,3 +398,30 @@ test('erase paper data: paper and (optionally) shadow trades go, live trades sta
     srv.close();
   }
 });
+
+test('morning and evening reports are built, saved once per day and listed', async () => {
+  const { ctx, a, ex, an } = await setup();
+  const { buildMorning, buildEvening, saveReport, morningText, eveningText } = await import('../server/agents/reports.js');
+  ctx.updateSettings({ confirmTrades: false, rules: { twoStage: { enabled: false } } });
+  quote(ctx, 101);
+  const [s] = an.rank([signal(a, 101)]);
+  await ex.consider(s);
+  await new Promise((r) => setTimeout(r, 20));
+  const m = await buildMorning(ctx);
+  assert.equal(m.type, 'morning');
+  assert.equal(m.positions.length, 1);
+  assert.equal(m.positions[0].symbol, 'TEST');
+  assert.ok(m.positions[0].watch.some((w) => /Time exit/.test(w)));
+  assert.equal(m.top[0].symbol, 'TEST');
+  assert.match(morningText(m), /Morning brief/);
+  saveReport(ctx.db, m);
+  saveReport(ctx.db, { ...m, counts: { ...m.counts, setups: 99 } });
+  assert.equal(ctx.db.get("SELECT COUNT(*) AS n FROM reports WHERE type = 'morning'").n, 1, 'one per day — refreshed, not duplicated');
+  assert.equal(JSON.parse(ctx.db.get("SELECT data FROM reports WHERE type = 'morning'").data).counts.setups, 99);
+
+  const e = await buildEvening(ctx);
+  assert.equal(e.buys.length, 1);
+  assert.equal(e.buys[0].symbol, 'TEST');
+  assert.equal(e.signals.bought.length, 1);
+  assert.match(eveningText(e), /Evening report/);
+});

@@ -64,7 +64,7 @@ let es = null;
 export function connectStream() {
   if (es) return;
   es = new EventSource('/api/stream');
-  for (const type of ['event', 'approval', 'positions', 'scan', 'progress', 'kite', 'settings', 'backtest', 'quotes']) {
+  for (const type of ['event', 'approval', 'positions', 'scan', 'progress', 'kite', 'settings', 'backtest', 'quotes', 'report']) {
     es.addEventListener(type, (m) => {
       let detail = null;
       try {

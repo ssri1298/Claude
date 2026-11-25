@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Sun, Radar, Briefcase, BarChart3, FlaskConical, Bot, Settings as SettingsIcon, MoreHorizontal, Diamond, Gavel } from 'lucide-react';
+import { Sun, Radar, Briefcase, BarChart3, FlaskConical, Bot, Settings as SettingsIcon, MoreHorizontal, Diamond, Gavel, Newspaper } from 'lucide-react';
 import { api, useRoute, go, connectStream, disconnectStream, price } from './lib.js';
 import { startLive, useIndex, usePhase, useFlash } from './live.js';
 import { Spinner } from './components/ui.jsx';
@@ -15,12 +15,14 @@ import Agents from './pages/Agents.jsx';
 import Settings from './pages/Settings.jsx';
 import More from './pages/More.jsx';
 import Overrule from './pages/Overrule.jsx';
+import Reports from './pages/Reports.jsx';
 
 const NAV = [
   { path: '/', label: 'Today', icon: Sun },
   { path: '/scanner', label: 'Scanner', icon: Radar },
   { path: '/trades', label: 'Trades', icon: Briefcase },
   { path: '/stats', label: 'Dashboard', icon: BarChart3 },
+  { path: '/reports', label: 'Reports', icon: Newspaper },
   { path: '/backtest', label: 'Backtest', icon: FlaskConical },
   { path: '/agents', label: 'Agents', icon: Bot },
   { path: '/overrule', label: 'Overrule', icon: Gavel },
@@ -74,11 +76,14 @@ export default function App() {
     case '/agents':
       page = <Agents />;
       break;
+    case '/reports':
+      page = <Reports key={route.query.date || ''} query={route.query} />;
+      break;
     case '/overrule':
       page = <Overrule />;
       break;
     case '/settings':
-      page = <Settings query={route.query} />;
+      page = <Settings query={route.query} section={route.parts[1]} />;
       break;
     case '/more':
       page = <More nav={NAV.slice(4)} />;
@@ -86,7 +91,7 @@ export default function App() {
     default:
       page = <Today />;
   }
-  const isActive = (p) => (p === '/' ? top === '/' : top === p || (p === '/scanner' && top === '/stock') || (p === '/more' && ['/backtest', '/agents', '/overrule', '/settings'].includes(top)));
+  const isActive = (p) => (p === '/' ? top === '/' : top === p || (p === '/scanner' && top === '/stock') || (p === '/more' && ['/reports', '/backtest', '/agents', '/overrule', '/settings'].includes(top)));
 
   return (
     <div className="min-h-screen lg:flex">
