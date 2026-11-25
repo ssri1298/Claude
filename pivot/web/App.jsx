@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Sun, Radar, Briefcase, BarChart3, FlaskConical, Bot, Settings as SettingsIcon, MoreHorizontal, Diamond } from 'lucide-react';
+import { Sun, Radar, Briefcase, BarChart3, FlaskConical, Bot, Settings as SettingsIcon, MoreHorizontal, Diamond, Gavel } from 'lucide-react';
 import { api, useRoute, go, connectStream, disconnectStream, price } from './lib.js';
 import { startLive, useIndex, usePhase, useFlash } from './live.js';
 import { Spinner } from './components/ui.jsx';
@@ -14,6 +14,7 @@ import Backtest from './pages/Backtest.jsx';
 import Agents from './pages/Agents.jsx';
 import Settings from './pages/Settings.jsx';
 import More from './pages/More.jsx';
+import Overrule from './pages/Overrule.jsx';
 
 const NAV = [
   { path: '/', label: 'Today', icon: Sun },
@@ -22,6 +23,7 @@ const NAV = [
   { path: '/stats', label: 'Dashboard', icon: BarChart3 },
   { path: '/backtest', label: 'Backtest', icon: FlaskConical },
   { path: '/agents', label: 'Agents', icon: Bot },
+  { path: '/overrule', label: 'Overrule', icon: Gavel },
   { path: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 const TABS = [NAV[0], NAV[1], NAV[2], NAV[3], { path: '/more', label: 'More', icon: MoreHorizontal }];
@@ -72,6 +74,9 @@ export default function App() {
     case '/agents':
       page = <Agents />;
       break;
+    case '/overrule':
+      page = <Overrule />;
+      break;
     case '/settings':
       page = <Settings query={route.query} />;
       break;
@@ -81,7 +86,7 @@ export default function App() {
     default:
       page = <Today />;
   }
-  const isActive = (p) => (p === '/' ? top === '/' : top === p || (p === '/scanner' && top === '/stock') || (p === '/more' && ['/backtest', '/agents', '/settings'].includes(top)));
+  const isActive = (p) => (p === '/' ? top === '/' : top === p || (p === '/scanner' && top === '/stock') || (p === '/more' && ['/backtest', '/agents', '/overrule', '/settings'].includes(top)));
 
   return (
     <div className="min-h-screen lg:flex">

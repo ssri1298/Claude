@@ -10,6 +10,7 @@ import { round } from './engine/vcp.js';
 import { NIFTY50_TOKEN, parseNifty500Csv } from './broker/feeds.js';
 import { indexSnapshot, stockSnapshot } from './core/quotes.js';
 import { agentPulse } from './core/pulse.js';
+import { pruneHolds, setBlocked, setCorrectionBuys, setPositionHold } from './core/overrides.js';
 import { CHECK_LABELS } from './engine/confirm.js';
 import { syncHolidays } from './core/holidays.js';
 import { createUpdater } from './core/updater.js';
@@ -296,6 +297,81 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
       const signals = db.all('SELECT status, COUNT(*) AS n FROM signals GROUP BY status');
       // P&L by exit month
       return { kind, stats, equity: eq, openCount: open.length, signals, recent: trades.slice(-12).reverse() };
+    }),
+  );
+
+  // ------------------------------------------------------------ overrule (you over the agents)
+  const youLog = (msg, level = 'info') => ctx.bus.log('You', msg, { level });
+  app.get(
+    '/api/overrule',
+    wrap(() => {
+      const ex = ag().executor;
+      const kind = ex.mode;
+      const t = ist(ctx.clock.now());
+      const openRows = db.all("SELECT * FROM positions WHERE kind = ? AND status = 'open' ORDER BY entry_ts DESC", kind);
+      const ov = pruneHolds(db, db.all("SELECT id FROM positions WHERE status = 'open'").map((r) => r.id));
+      const R = ctx.settings.rules;
+      const passed = db
+        .all("SELECT * FROM signals WHERE date = ? AND status NOT IN ('auto','approved','overruled','awaiting_approval') ORDER BY id DESC LIMIT 60", t.date)
+        .filter((r, i, arr) => arr.findIndex((x) => x.symbol === r.symbol) === i)
+        .map((r) => {
+          const l = ctx.live?.get(r.symbol);
+          return { id: r.id, ts: r.ts, symbol: r.symbol, type: r.type, price: r.price, pivot: r.pivot, score: r.score, grade: r.grade, status: r.status, reason: r.reason, ltp: l?.ltp ?? null, distPivotPct: l?.distPivotPct ?? null, held: !!db.get("SELECT id FROM positions WHERE symbol = ? AND kind = ? AND status = 'open'", r.symbol, kind) };
+        });
+      const uni = new Map(db.all('SELECT symbol, name, industry FROM universe').map((u) => [u.symbol, u]));
+      return {
+        phase: ctx.parent.phase,
+        mode: kind,
+        paused: !!ctx.settings.agentsPaused,
+        market: { regime: ctx.market?.regime || 'unknown', filter: ctx.settings.marketFilter, correctionToday: ov.allowCorrectionBuys === t.date },
+        signals: passed,
+        positions: positionsView(ctx, openRows).map((p) => ({ ...p, holds: ov.positions[p.id] || {} })),
+        rules: { failedExit: R.failedExit?.enabled ? R.failedExit.days || 2 : null, timeExit: R.timeExit?.enabled ? R.timeExit.days || 7 : null, trailMethod: R.trailMethod, partialAtPct: R.partialAtPct },
+        blocked: Object.entries(ov.blocked).map(([symbol, b]) => ({ symbol, ...b, name: uni.get(symbol)?.name || '' })),
+        candidates: [...(ctx.analysis?.values() || [])]
+          .filter((a) => a.vcp?.valid || a.trend?.pass)
+          .sort((x, y) => (y.score || 0) - (x.score || 0))
+          .slice(0, 80)
+          .map((a) => ({ symbol: a.symbol, score: a.score, grade: a.grade, setup: !!a.vcp?.valid })),
+        history: db.all("SELECT * FROM events WHERE agent = 'You' ORDER BY id DESC LIMIT 40"),
+      };
+    }),
+  );
+  app.post('/api/overrule/buy', wrap(async (req) => ag().executor.overruleBuy({ signalId: Number(req.body.signalId) || null, symbol: req.body.symbol })));
+  app.post(
+    '/api/overrule/block',
+    wrap(async (req) => {
+      const symbol = String(req.body.symbol || '').toUpperCase().trim();
+      if (!symbol) throw Object.assign(new Error('Pick a stock'), { status: 400 });
+      const on = req.body.blocked !== false;
+      setBlocked(db, symbol, on, String(req.body.note || '').slice(0, 200));
+      if (on) {
+        for (const ap of db.all("SELECT id FROM approvals WHERE symbol = ? AND status = 'pending'", symbol)) await ag().executor.decide(ap.id, 'reject', 'you');
+        youLog(`You blocked ${symbol} — the agents will not buy it until you unblock it`, 'warn');
+      } else youLog(`You unblocked ${symbol} — the agents may buy it again`);
+      return { ok: true };
+    }),
+  );
+  app.post(
+    '/api/overrule/correction',
+    wrap((req) => {
+      const allow = !!req.body.allow;
+      setCorrectionBuys(db, allow ? ist(ctx.clock.now()).date : null);
+      youLog(allow ? 'You allowed new buys today even though the market filter says correction' : 'You switched the market filter back on for today', allow ? 'warn' : 'info');
+      return { ok: true };
+    }),
+  );
+  app.post(
+    '/api/overrule/hold',
+    wrap((req) => {
+      const id = Number(req.body.positionId);
+      const row = db.get("SELECT symbol FROM positions WHERE id = ? AND status = 'open'", id);
+      if (!row) throw Object.assign(new Error('Position is not open'), { status: 400 });
+      const flag = String(req.body.flag);
+      setPositionHold(db, id, flag, !!req.body.on);
+      const what = { noFailedExit: 'failed-breakout exit', noTimeExit: 'time exit', noTrail: 'trailing exit', noPartial: 'one-third profit sale at +10%' }[flag];
+      youLog(req.body.on ? `You switched off the ${what} for ${row.symbol}` : `You switched the ${what} back on for ${row.symbol}`, req.body.on ? 'warn' : 'info');
+      return { ok: true };
     }),
   );
 

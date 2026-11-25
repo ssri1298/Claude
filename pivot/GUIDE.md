@@ -128,6 +128,18 @@ You get the 8:00 am Kite login reminder, buy signals, fills, stops, partial prof
 - **Profit**: sell one third at +10%, move the stop to your buy price, then exit when a day closes below the 21-day EMA. You can sell or move the stop yourself at any time from **Trades**.
 - **Re-entry**: if you were stopped out and the stock reclaims its pivot on strong volume within 10 trading days, Pivot proposes buying it again (at most 2 times per setup).
 
+## Overruling the agents (More → Overrule)
+
+You always have the final say. On the **Overrule** page you can:
+
+- **Buy what the agents passed on** — today's breakouts they skipped (score too low, market correction, no capital, stop too wide, or one you rejected). Tap **Buy anyway**. It is still sized at 10% and gets a stop (the chart stop, or your maximum % if that is wider).
+- **Buy any Nifty 500 stock now**, even one the agents haven't picked.
+- **Keep a position longer** — switch off the failed-breakout exit, the time exit, the ⅓ sale at +10% or the trailing exit for one stock.
+- **Buy today even in a correction**, or **pause all new buys**.
+- **Block stocks** the agents must never buy (results coming, bad news…).
+
+The **stop-loss can never be switched off** — you can only move it. Everything you change is logged under "Your overrules".
+
 ## Going live (when you're ready)
 
 1. Paper-trade for at least 3–4 weeks. On the **Dashboard**, check the win rate, average win vs average loss, and whether grade A/A+ trades beat grade B.

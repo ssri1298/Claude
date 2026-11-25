@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Crown, Radar, Sparkles, ShieldCheck, Check, X, KeyRound, Pause, Play, FastForward, Gauge, TrendingUp, TrendingDown, Activity , Timer } from 'lucide-react';
+import { Crown, Radar, Sparkles, ShieldCheck, Check, X, KeyRound, Pause, Play, FastForward, Gauge, TrendingUp, TrendingDown, Activity , Timer, Gavel } from 'lucide-react';
 import { api, useApi, go, inr, price, pct, signed, tone, istTime, compactInr } from '../lib.js';
 import { Card, Section, Pill, GradeBadge, Button, Spinner, Empty, RiskBar, Segmented, Contractions, StageBadge, Delta , LivePrice } from '../components/ui.jsx';
 import { useQuote, useFlash } from '../live.js';
@@ -397,10 +397,10 @@ function SetupCard({ s }) {
 }
 
 const LEVEL_TONE = { success: 'text-mint', warn: 'text-butter', error: 'text-coral', info: 'text-ink3' };
-const AGENT_BG = { Parent: 'bg-lav-soft text-lav', Screener: 'bg-sky-soft text-sky', Analyst: 'bg-peach-soft text-peach', Executor: 'bg-mint-soft text-mint' };
+const AGENT_BG = { You: 'bg-coral-soft text-coral', Parent: 'bg-lav-soft text-lav', Screener: 'bg-sky-soft text-sky', Analyst: 'bg-peach-soft text-peach', Executor: 'bg-mint-soft text-mint' };
 
 export function EventRow({ e }) {
-  const Icon = { Parent: Crown, Screener: Radar, Analyst: Sparkles, Executor: ShieldCheck }[e.agent] || Activity;
+  const Icon = { You: Gavel, Parent: Crown, Screener: Radar, Analyst: Sparkles, Executor: ShieldCheck }[e.agent] || Activity;
   return (
     <div className="flex gap-3 px-4 sm:px-5 py-3.5 rise">
       <span className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${AGENT_BG[e.agent] || 'bg-card2'}`}>

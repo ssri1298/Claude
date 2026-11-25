@@ -12,6 +12,7 @@ import { ist, tradingDaysBetween, MARKET } from '../core/time.js';
 import { volumePace } from '../engine/market.js';
 import { esc } from '../notify/telegram.js';
 import { describeChecks } from '../engine/confirm.js';
+import { getOverrides, isBlocked } from '../core/overrides.js';
 
 const NAME = 'Executor';
 const inr = (x) => '₹' + Number(x).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -74,41 +75,59 @@ export class Executor {
   }
 
   // ------------------------------------------------------------------ new signals
-  async consider(sig) {
+  /**
+   * Decide what to do with a rated signal. With { force: true } (you overruled the agents from the
+   * Overrule page) the score, market filter, pause, stop-width and position-count rules are skipped and
+   * the order goes straight through — but there must still be enough cash for at least one share.
+   */
+  async consider(sig, { force = false } = {}) {
     const { db, settings, clock } = this.ctx;
     const rules = settings.rules;
     const kind = this.mode;
     const tick = this.tickOf(sig.symbol);
-    const entry = roundTick(Math.min(sig.price * 1.002, sig.pivot * (1 + rules.buyZonePct / 100)), tick);
-    const stopRes = computeStop(entry, sig.chartStop, rules);
+    const fail = (msg) => {
+      if (force) throw Object.assign(new Error(msg), { status: 400 });
+    };
+    const entry = force ? roundTick(sig.price * 1.002, tick) : roundTick(Math.min(sig.price * 1.002, sig.pivot * (1 + rules.buyZonePct / 100)), tick);
+    let stopRes = computeStop(entry, sig.chartStop, rules);
+    if (force && (stopRes.skip || !stopRes.stop)) {
+      const stop = roundTick(entry * (1 - rules.maxStopPct / 100), tick);
+      stopRes = { stop, stopPct: round((1 - stop / entry) * 100, 1), note: `${rules.maxStopPct}% stop (chart stop too wide — your overrule)` };
+    }
 
     const setShadow = (reason) => this.openShadow(sig, entry, stopRes.stop ?? roundTick(entry * (1 - rules.maxStopPct / 100), tick), reason);
 
-    if (sig.status !== 'ranked') {
+    if (!force && sig.status !== 'ranked') {
       setShadow(sig.reason);
       return;
     }
-    if (settings.agentsPaused) {
+    if (!force && isBlocked(db, sig.symbol)) {
+      this.markSignal(sig.id, 'skipped_blocked', 'You blocked this stock');
+      return;
+    }
+    if (!force && settings.agentsPaused) {
       this.markSignal(sig.id, 'skipped_paused', 'Agents are paused');
       setShadow('Agents paused');
       return;
     }
-    if (stopRes.skip) {
+    if (!force && stopRes.skip) {
       this.markSignal(sig.id, 'skipped_stop', stopRes.reason);
       this.log(`${sig.symbol}: skipped — ${stopRes.reason}`, 'warn');
       return;
     }
     if (db.get("SELECT id FROM positions WHERE symbol = ? AND kind = ? AND status = 'open'", sig.symbol, kind)) {
+      fail(`You already hold ${sig.symbol}`);
       this.markSignal(sig.id, 'skipped_held', 'Already holding this stock');
       return;
     }
-    if (db.get("SELECT id FROM approvals WHERE symbol = ? AND status = 'pending'", sig.symbol)) return;
+    if (db.get("SELECT id FROM approvals WHERE symbol = ? AND status = 'pending'", sig.symbol)) return fail(`${sig.symbol} is already waiting for your approval on the Today page`);
 
     const open = this.openPositions(kind);
     const cap = capacityCheck({ openPositions: open, industry: sig.a.industry, rules });
     const capital = await this.capital(kind);
     const size = positionSize({ equity: sig.half ? capital.equity / 2 : capital.equity, cash: capital.cash, price: entry, rules });
-    if (!cap.ok || size.qty < 1 || (size.limitedByCash && size.value < size.target * 0.5)) {
+    if (force && size.qty < 1) fail(`Not enough free cash (${inr(capital.cash)} available)`);
+    if (!force && (!cap.ok || size.qty < 1 || (size.limitedByCash && size.value < size.target * 0.5))) {
       const why = !cap.ok ? cap.reason : `Not enough free cash (${inr(capital.cash)} available, ${inr(size.target)} needed)`;
       this.markSignal(sig.id, 'skipped_capital', why);
       this.log(`${sig.symbol} (${sig.grade}) — ${why}. Tracking it as a shadow trade for future learning.`, 'warn');
@@ -152,8 +171,14 @@ export class Executor {
       parts: sig.parts,
       firstEntryDate: sig.firstEntryDate,
       kind,
+      ...(force ? { limitCap: entry * 1.01 } : {}),
     };
 
+    if (force) {
+      this.markSignal(sig.id, 'overruled', 'You bought it anyway');
+      await this.execute(proposal, 'you');
+      return { ok: true, qty: proposal.qty, price: entry, stop: proposal.stop };
+    }
     if (!settings.confirmTrades) {
       this.markSignal(sig.id, 'auto', 'Auto-executed');
       this.execute(proposal, 'auto').catch((e) => this.log(`Order for ${sig.symbol} failed: ${e.message}`, 'error'));
@@ -299,7 +324,7 @@ export class Executor {
           price: p.price,
           tick,
           getLtp: () => this.ltpOf(p.symbol),
-          limitCap: p.pivot * (1 + settings.rules.buyZonePct / 100),
+          limitCap: p.limitCap ?? p.pivot * (1 + settings.rules.buyZonePct / 100),
         });
         db.insert('orders', { ts: clock.now().toISOString(), symbol: p.symbol, side: 'BUY', qty: p.qty, price: p.price, status: res.status, broker_id: res.orderId, filled_qty: res.filledQty, avg_price: res.avgPrice, reason: p.type, mode: kind, message: res.message });
         if (!res.filledQty) {
@@ -506,8 +531,11 @@ export class Executor {
     const rules = settings.rules;
     const all = db.all("SELECT * FROM positions WHERE status = 'open'");
     this.status.lastCheck = Date.now();
+    const holdsById = getOverrides(db).positions;
     for (const row of all) {
       if (this.busy.has(row.id)) continue;
+      const holds = holdsById[row.id] || {}; // exit rules you switched off for this position
+      const prules = holds.noPartial || holds.noTrail ? { ...rules, ...(holds.noPartial ? { partialAtPct: Infinity } : {}), ...(holds.noTrail ? { trailMethod: 'none' } : {}) } : rules;
       const a = this.ctx.analysis?.get(row.symbol);
       const q = this.ctx.quotes.get(row.token);
       if (!q?.ltp) continue;
@@ -521,7 +549,7 @@ export class Executor {
         else if (rules.trailMethod === 'sma50' && a.sma50) trailLevel = a.sma50;
       }
       // Failed breakout: a new buy that closes back below its pivot is sold at the close
-      if (isCloseCheck && rules.failedExit?.enabled && !row.partial_done) {
+      if (isCloseCheck && rules.failedExit?.enabled && !holds.noFailedExit && !row.partial_done) {
         const pv = JSON.parse(row.setup || '{}').pivot;
         const held = tradingDaysBetween(row.entry_date, ist(this.now()).date, settings.holidays);
         if (pv && price < pv && held < (rules.failedExit.days || 2)) {
@@ -530,7 +558,7 @@ export class Executor {
         }
       }
       // Time exit: no stop and no +10% within N trading days → free up the capital at the close
-      if (isCloseCheck && rules.timeExit?.enabled && !row.partial_done) {
+      if (isCloseCheck && rules.timeExit?.enabled && !holds.noTimeExit && !row.partial_done) {
         const held = tradingDaysBetween(row.entry_date, ist(this.now()).date, settings.holidays);
         if (held >= (rules.timeExit.days || 7)) {
           const pct = ((price / row.entry_price - 1) * 100).toFixed(1);
@@ -538,7 +566,7 @@ export class Executor {
           continue;
         }
       }
-      const actions = managePosition(pos, price, { isCloseCheck, trailLevel }, rules);
+      const actions = managePosition(pos, price, { isCloseCheck, trailLevel }, prules);
       for (const act of actions) {
         if (act.type === 'stop') this.track(this.exit(row, act.qty, 'stop', act.reason, price));
         else if (act.type === 'partial') {
@@ -633,6 +661,42 @@ export class Executor {
     } finally {
       this.busy.delete(row.id);
     }
+  }
+
+  /**
+   * You overrule the agents and buy: either a signal they passed on today ({ signalId }), or any analysed
+   * stock right now ({ symbol }). Rules that would have stopped the buy are skipped; sizing (10% of capital)
+   * and a stop (chart stop, or the maximum % if the chart stop is too wide) are still applied.
+   */
+  async overruleBuy({ signalId, symbol }) {
+    const { db, analysis, quotes } = this.ctx;
+    const err = (m, status = 400) => Object.assign(new Error(m), { status });
+    if (this.ctx.parent?.phase !== 'market') throw err('The market is closed — overrule buys work between 09:15 and 15:30');
+    let row = null;
+    if (signalId) {
+      row = db.get('SELECT * FROM signals WHERE id = ?', signalId);
+      if (!row) throw err('Signal not found', 404);
+      if (row.date !== ist(this.now()).date) throw err("Only today's signals can be bought — the price has moved since");
+      symbol = row.symbol;
+    }
+    symbol = String(symbol || '').toUpperCase().trim();
+    const a = analysis.get(symbol);
+    if (!a) throw err(`${symbol || 'That stock'} is not in the Nifty 500 analysis`);
+    const q = quotes.get(a.token);
+    if (!q?.ltp) throw err(`No live price for ${symbol} yet`);
+    const chartStop = a.vcp?.stop ?? (a.vcp?.lastLow ? a.vcp.lastLow * 0.995 : null);
+    let sig;
+    if (row) {
+      const d = JSON.parse(row.data || '{}');
+      sig = { id: row.id, type: row.type, symbol, a, price: q.ltp, pivot: row.pivot, chartStop, volPace: row.vol_pace, score: row.score, grade: row.grade, parts: d.parts, good: d.good, bad: d.bad, status: 'ranked' };
+    } else {
+      const minutes = ist(this.now()).minutes - MARKET.open;
+      const base = { type: 'breakout', symbol, a, price: q.ltp, pivot: a.vcp?.pivot || q.ltp, chartStop, volPace: volumePace(q.volume || 0, minutes, a.avgVol50) || 0 };
+      [sig] = this.ctx.agents.analyst.rank([base]);
+    }
+    const res = await this.consider(sig, { force: true });
+    this.ctx.bus.log('You', `You overruled the agents and bought ${symbol} — ${res.qty} shares at about ${inr(res.price)}, stop ${inr(res.stop)}`, { level: 'success' });
+    return res;
   }
 
   async manualExit(id, fraction = 1) {

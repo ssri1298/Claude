@@ -99,6 +99,7 @@ export default function Agents() {
               { value: 'Analyst', label: 'Analyst' },
               { value: 'Executor', label: 'Executor' },
               { value: 'Parent', label: 'Parent' },
+              { value: 'You', label: 'You' },
             ]}
           />
         </div>

@@ -6,6 +6,7 @@
 import { scoreSetup, explain } from '../engine/scoring.js';
 import { ist } from '../core/time.js';
 import { round } from '../engine/vcp.js';
+import { getOverrides } from '../core/overrides.js';
 
 const NAME = 'Analyst';
 
@@ -25,6 +26,8 @@ export class Analyst {
     const rules = settings.rules;
     const regime = this.ctx.market?.regime || 'unknown';
     const t = ist(clock.now());
+    const ov = getOverrides(db);
+    const correctionOk = ov.allowCorrectionBuys === t.date;
     const out = [];
     for (const s of signals) {
       const a = s.type === 'reentry' ? { ...s.a, vcp: { ...s.a.vcp, valid: true, pivot: s.pivot } } : s.a;
@@ -34,7 +37,10 @@ export class Analyst {
       if (regime === 'pressure') minScore += rules.pressureExtraScore;
       let status = 'ranked';
       let reason = '';
-      if (regime === 'downtrend' && settings.marketFilter === 'pause') {
+      if (ov.blocked[s.symbol]) {
+        status = 'skipped_blocked';
+        reason = 'You blocked this stock';
+      } else if (regime === 'downtrend' && settings.marketFilter === 'pause' && !correctionOk) {
         status = 'skipped_regime';
         reason = 'Market is in a correction — new buys paused';
       } else if (sc.score < minScore) {
@@ -50,7 +56,7 @@ export class Analyst {
         bad: ex.bad,
         status,
         reason,
-        half: regime === 'downtrend' && settings.marketFilter === 'half',
+        half: regime === 'downtrend' && settings.marketFilter === 'half' && !correctionOk,
       };
       sig.id = db.insert('signals', {
         ts: clock.now().toISOString(),

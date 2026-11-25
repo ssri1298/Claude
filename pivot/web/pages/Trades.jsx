@@ -94,7 +94,7 @@ function OpenList({ rows, reload }) {
   );
 }
 
-function StopSheet({ p, onClose, onDone }) {
+export function StopSheet({ p, onClose, onDone }) {
   const [v, setV] = useState(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -137,7 +137,7 @@ function StopSheet({ p, onClose, onDone }) {
   );
 }
 
-function ConfirmSell({ c, onClose, onDone }) {
+export function ConfirmSell({ c, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   if (!c) return null;

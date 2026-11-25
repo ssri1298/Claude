@@ -1,8 +1,8 @@
 import { go } from '../lib.js';
 import { LargeTitle, List, Row } from '../components/ui.jsx';
 
-const SUB = { '/backtest': 'Test the rules on years of history', '/agents': 'What each agent is doing, daily routine, log', '/settings': 'Trading mode, risk rules, Zerodha, Telegram, theme' };
-const TONES = ['peach', 'sky', 'lav'];
+const SUB = { '/backtest': 'Test the rules on years of history', '/agents': 'What each agent is doing, daily routine, log', '/overrule': 'Buy what the agents skipped, keep positions longer, block stocks', '/settings': 'Trading mode, risk rules, Zerodha, Telegram, theme' };
+const TONES = ['peach', 'sky', 'coral', 'lav'];
 
 export default function More({ nav }) {
   return (

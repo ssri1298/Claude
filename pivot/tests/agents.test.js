@@ -291,3 +291,73 @@ test('morning Kite login reminder: at the chosen time, repeated, not on holidays
   assert.equal(sent.length, 4);
   ctx.stop();
 });
+
+test('overrule: blocked stocks are never bought; you can buy a skipped signal anyway', async () => {
+  const { ctx, a, ex, an } = await setup();
+  const { setBlocked } = await import('../server/core/overrides.js');
+  ctx.updateSettings({ confirmTrades: false, rules: { twoStage: { enabled: false } } });
+  quote(ctx, 101);
+  setBlocked(ctx.db, 'TEST', true);
+  const [s] = an.rank([signal(a, 101)]);
+  assert.equal(s.status, 'skipped_blocked');
+  await ex.consider(s);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(ctx.db.get("SELECT COUNT(*) AS n FROM positions WHERE kind = 'paper'").n, 0);
+
+  // Market correction would pause buys — you buy it anyway
+  setBlocked(ctx.db, 'TEST', false);
+  ctx.market = { regime: 'downtrend' };
+  ctx.updateSettings({ marketFilter: 'pause' });
+  ctx.parent.phase = 'market';
+  const [s2] = an.rank([signal(a, 101)]);
+  assert.equal(s2.status, 'skipped_regime');
+  await ex.consider(s2);
+  const res = await ex.overruleBuy({ signalId: s2.id });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(res.qty > 0);
+  const pos = ctx.db.get("SELECT * FROM positions WHERE kind = 'paper' AND status = 'open'");
+  assert.ok(pos, 'bought despite the correction');
+  assert.ok(pos.stop < pos.entry_price);
+  assert.equal(ctx.db.get('SELECT status FROM signals WHERE id = ?', s2.id).status, 'overruled');
+  assert.ok(ctx.db.get("SELECT id FROM events WHERE agent = 'You'"), 'logged as your overrule');
+  // can't buy twice
+  await assert.rejects(ex.overruleBuy({ symbol: 'TEST' }), /already hold/);
+});
+
+test('overrule: switching off the time exit keeps the position; the stop still works', async () => {
+  const { ctx, a, ex, an } = await setup();
+  const { setPositionHold } = await import('../server/core/overrides.js');
+  ctx.updateSettings({ confirmTrades: false, rules: { twoStage: { enabled: false } } });
+  quote(ctx, 101);
+  const [s] = an.rank([signal(a, 101)]);
+  await ex.consider(s);
+  await new Promise((r) => setTimeout(r, 20));
+  const pos0 = ctx.db.get("SELECT * FROM positions WHERE kind = 'paper'");
+  setPositionHold(ctx.db, pos0.id, 'noTimeExit', true);
+  setPositionHold(ctx.db, pos0.id, 'noFailedExit', true);
+  ctx.clock.set(istDate('2028-03-28', toMinutes('15:20')));
+  quote(ctx, 99);
+  await tick(ex, { isCloseCheck: true });
+  assert.equal(ctx.db.get('SELECT status FROM positions WHERE id = ?', pos0.id).status, 'open', 'held past the time exit');
+  quote(ctx, pos0.stop - 0.5);
+  await tick(ex, {});
+  const pos = ctx.db.get('SELECT * FROM positions WHERE id = ?', pos0.id);
+  assert.equal(pos.exit_reason, 'stop', 'stop-loss is never switched off');
+});
+
+test('overrule: no partial sale at +10% when you switch it off', async () => {
+  const { ctx, a, ex, an } = await setup();
+  const { setPositionHold } = await import('../server/core/overrides.js');
+  ctx.updateSettings({ confirmTrades: false, rules: { twoStage: { enabled: false } } });
+  quote(ctx, 101);
+  const [s] = an.rank([signal(a, 101)]);
+  await ex.consider(s);
+  await new Promise((r) => setTimeout(r, 20));
+  const pos0 = ctx.db.get("SELECT * FROM positions WHERE kind = 'paper'");
+  setPositionHold(ctx.db, pos0.id, 'noPartial', true);
+  quote(ctx, pos0.entry_price * 1.12);
+  await tick(ex, {});
+  const pos = ctx.db.get('SELECT * FROM positions WHERE id = ?', pos0.id);
+  assert.equal(pos.partial_done, 0);
+  assert.equal(pos.qty_open, pos0.qty_open);
+});
