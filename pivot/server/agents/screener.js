@@ -132,21 +132,15 @@ export class Screener {
       for (const u of list) {
         const first = db.get('SELECT MIN(date) AS d FROM candles WHERE token = ?', u.token)?.d;
         if (first && first > target) {
-          // Kite allows ~2000 days of daily candles per request → fetch backwards in chunks
-          let to = addDays(first, -1);
-          while (to > target) {
-            const from = addDays(to, -1900) > target ? addDays(to, -1900) : target;
-            try {
-              const candles = u.index ? await feed.indexHistory(from, to) : await feed.history(u.token, from, to);
-              db.tx(() => {
-                for (const c of candles) db.run('INSERT OR IGNORE INTO candles(token,date,open,high,low,close,volume) VALUES(?,?,?,?,?,?,?)', u.token, c.date, c.open, c.high, c.low, c.close, c.volume);
-              });
-              if (!candles.length) break; // listed later than this — nothing older exists
-            } catch (e) {
-              if (e.type === 'TokenException') throw e;
-              break;
-            }
-            to = addDays(from, -1);
+          // Kite allows ~2000 days of daily candles per request
+          const to = addDays(first, -1);
+          try {
+            const candles = u.index ? await feed.indexHistory(target, to) : await feed.history(u.token, target, to);
+            db.tx(() => {
+              for (const c of candles) db.run('INSERT OR IGNORE INTO candles(token,date,open,high,low,close,volume) VALUES(?,?,?,?,?,?,?)', u.token, c.date, c.open, c.high, c.low, c.close, c.volume);
+            });
+          } catch (e) {
+            if (e.type === 'TokenException') throw e;
           }
         }
         done++;

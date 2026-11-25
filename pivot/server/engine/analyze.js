@@ -11,10 +11,10 @@ export function prepareUniverse(stocks) {
   // stocks: [{ symbol, name, industry, token, candles: [{date,open,high,low,close,volume}] }]
   return stocks
     .filter((s) => s.candles && s.candles.length >= 60)
-    .map(({ candles, ...s }) => {
-      const c = columns(candles);
+    .map((s) => {
+      const c = columns(s.candles);
       const idx = new Map(c.date.map((d, i) => [d, i]));
-      return { ...s, c, m: movingAverages(c), idx }; // the raw candle objects are not kept (saves memory)
+      return { ...s, c, m: movingAverages(c), idx };
     });
 }
 

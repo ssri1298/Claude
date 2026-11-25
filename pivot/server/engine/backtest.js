@@ -15,55 +15,11 @@ import { round } from './vcp.js';
 import { roundTick } from './indicators.js';
 import { monteCarlo, byPeriod } from './robustness.js';
 
-/** Keep only what the simulation and scoring read from a day's analysis (years of it must fit in memory). */
-const VCP_KEYS = ['valid', 'stage', 'pivot', 'stop', 'stopPct', 'distToPivotPct', 'count', 'depthPct', 'finalDepthPct', 'baseBars', 'dryUpDays', 'higherLows', 'lastVolRatio', 'priorAdvancePct', 'shrinkViolations', 'tightnessPct', 'upDownVol'];
-function compactAnalysis(res) {
-  const stocks = [];
-  for (const a of res.stocks) {
-    if ((a.trend?.passCount ?? 0) < 7) continue; // can't be bought or re-entered
-    const t = a.trend;
-    const o = {
-      symbol: a.symbol,
-      industry: a.industry,
-      rsRating: a.rsRating,
-      rsLineHigh: a.rsLineHigh,
-      sectorRs: a.sectorRs,
-      stage: a.stage,
-      avgVol50: a.avgVol50,
-      turnoverCr: a.turnoverCr,
-      trend: { pass: t.pass, passCount: t.passCount, ma200SlopePct: t.ma200SlopePct, above200Pct: t.above200Pct, fromHighPct: t.fromHighPct },
-      vcp: { valid: false, stage: a.vcp?.stage },
-    };
-    if (a.vcp?.valid) {
-      o.vcp = {};
-      for (const k of VCP_KEYS) if (a.vcp[k] !== undefined) o.vcp[k] = a.vcp[k];
-      o.vcp.contractions = (a.vcp.contractions || []).map((k) => ({ depthPct: k.depthPct }));
-    }
-    stocks.push(o);
-  }
-  return { market: { regime: res.market?.regime }, stocks };
-}
-
-/**
- * The slow part of a backtest — analysing every stock on every day — done once, so many settings
- * can then be simulated quickly on the same history (used by the optimiser). Results are identical.
- */
-export function precomputeAnalyses({ stocks, index, from, to, onProgress }) {
-  const prepared = prepareUniverse(stocks);
-  const dates = index.map((c) => c.date).filter((d) => (!from || d >= from) && (!to || d <= to));
-  const analyses = new Map();
-  dates.forEach((d, di) => {
-    analyses.set(d, compactAnalysis(analyzeUniverse(prepared, { indexCandles: index, date: d })));
-    if (onProgress && di % 10 === 0) onProgress(di / dates.length);
-  });
-  return { prepared, analyses, dates };
-}
-
-export function runBacktest({ stocks, index, from, to, capital = 500000, rules = DEFAULT_RULES, marketFilter = 'pause', compounding = true, onProgress, pre, light = false }) {
+export function runBacktest({ stocks, index, from, to, capital = 500000, rules = DEFAULT_RULES, marketFilter = 'pause', compounding = true, onProgress }) {
   const R = mergeRules(rules);
-  const prepared = pre ? pre.prepared : prepareUniverse(stocks);
+  const prepared = prepareUniverse(stocks);
   const bySym = new Map(prepared.map((s) => [s.symbol, s]));
-  const dates = (pre ? pre.dates : index.map((c) => c.date)).filter((d) => (!from || d >= from) && (!to || d <= to));
+  const dates = index.map((c) => c.date).filter((d) => (!from || d >= from) && (!to || d <= to));
   let cash = capital;
   const open = [];
   const closed = [];
@@ -301,7 +257,7 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
     }, 0);
     equity.push({ date: d, equity: round(cash + invested, 0), cash: round(cash, 0), invested: round(invested, 0), positions: open.length });
 
-    prevAnalysis = pre ? pre.analyses.get(d) : analyzeUniverse(prepared, { indexCandles: index, date: d });
+    prevAnalysis = analyzeUniverse(prepared, { indexCandles: index, date: d });
     if (onProgress && di % 20 === 0) onProgress(di / dates.length);
   }
 
@@ -310,8 +266,8 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
   return {
     params: { from: dates[0], to: dates[dates.length - 1], capital, rules: R, marketFilter, compounding },
     stats,
-    monteCarlo: light ? null : monteCarlo(trades, equity, capital),
-    periods: light ? null : byPeriod(trades, equity, capital),
+    monteCarlo: monteCarlo(trades, equity, capital),
+    periods: byPeriod(trades, equity, capital),
     equity,
     trades: trades.sort((a, b) => (a.entryDate < b.entryDate ? 1 : -1)),
     openAtEnd: open.map((p) => ({ symbol: p.symbol, entryDate: p.entryDate, entryPrice: p.entryPrice, qtyOpen: p.qtyOpen, stop: p.stop })),

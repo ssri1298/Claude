@@ -335,34 +335,3 @@ test('rule report card groups trades and suggests changes where a group loses', 
   assert.equal(sc.buckets.find((b) => b.label === '75–84 (A)').avgR, 3);
   assert.ok(rc.tips.some((t) => /minimum score to 75/.test(t.text)), JSON.stringify(rc.tips));
 });
-
-test('optimiser: walk-forward search keeps locked settings and never recommends something worse than current', async () => {
-  const { optimize, settingsPatch, paramsFromSettings } = await import('../server/engine/optimize.js');
-  const m = generateMarket({ seed: 7, stocks: 60, days: 800 });
-  const dates = tradingDates(m);
-  const r = optimize({ stocks: m.stocks, index: m.index, from: dates[260], baseRules: DEFAULT_RULES, trials: 30, locked: ['positionPct', 'maxStopPct'] });
-  assert.ok(r.tested > 30);
-  assert.ok(r.periods.train.to < r.periods.test.from, 'test period comes after the tuning period');
-  assert.equal(r.recommended.params.positionPct, DEFAULT_RULES.positionPct, 'locked: position size');
-  assert.equal(r.recommended.params.maxStopPct, DEFAULT_RULES.maxStopPct, 'locked: stop');
-  assert.ok(r.keepCurrent || r.recommended.robust > r.current.robust, 'only recommends a more robust set');
-  // the new rules round-trip through a settings patch
-  const p = paramsFromSettings(DEFAULT_RULES, 'pause');
-  const back = paramsFromSettings({ ...DEFAULT_RULES, ...settingsPatch({ ...p, timeExitDays: 10, minTurnoverCr: 25, sizing: 'risk', climax: false }, DEFAULT_RULES).rules }, 'pause');
-  assert.equal(back.timeExitDays, 10);
-  assert.equal(back.minTurnoverCr, 25);
-  assert.equal(back.sizing, 'risk');
-  assert.equal(back.climax, false);
-});
-
-test('precomputed history gives the same backtest as the normal one', async () => {
-  const { precomputeAnalyses } = await import('../server/engine/backtest.js');
-  const m = generateMarket({ seed: 5, stocks: 50, days: 650 });
-  const dates = tradingDates(m);
-  const R = { ...DEFAULT_RULES, reentry: { ...DEFAULT_RULES.reentry, enabled: false } };
-  const a = runBacktest({ stocks: m.stocks, index: m.index, from: dates[300], rules: R });
-  const pre = precomputeAnalyses({ stocks: m.stocks, index: m.index, from: dates[300] });
-  const b = runBacktest({ pre, from: dates[300], rules: R });
-  assert.equal(b.stats.trades, a.stats.trades);
-  assert.equal(b.stats.totalReturnPct, a.stats.totalReturnPct);
-});

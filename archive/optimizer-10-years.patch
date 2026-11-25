@@ -1,0 +1,997 @@
+From 481b748b7e79be705e5074af14a8a036bbda07cb Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 25 Nov 2026 18:11:02 +0000
+Subject: [PATCH] Settings optimiser on 10 years of history, applied
+ automatically
+
+- Brings the walk-forward optimiser back, updated for the new rules:
+  sizing method, time exit, turnover and sector filters, 8-week hold
+  and climax sale join score, stop, profit level, trailing, buy zone,
+  volume, market filter and breakout checks.
+- Tunes on the older 70% of history, checks on the unseen recent 30%;
+  only changes anything that made money in both periods within the
+  drawdown limit and beat the current settings.
+- Runs on up to 15 years (default 10). "Get 10 years of data" now
+  downloads in ~1,900-day chunks (Kite's limit) plus a warm-up year.
+- Applies the result automatically (optional), notifies, and keeps the
+  previous settings for one-tap Undo.
+- One-time history analysis kept compact (only what the simulation
+  reads) and raw candles released after use, so 10 years of the Nifty
+  500 fits a small server; worker gets a larger memory allowance.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013Q9VNStcDLsK2gtz6b8dww
+---
+ pivot/GUIDE.md                        |  12 ++
+ pivot/server/agents/screener.js       |  24 ++-
+ pivot/server/api.js                   |  87 +++++++-
+ pivot/server/engine/analyze.js        |   6 +-
+ pivot/server/engine/backtest.js       |  56 ++++-
+ pivot/server/engine/backtestWorker.js |  25 ++-
+ pivot/server/engine/optimize.js       | 227 ++++++++++++++++++++
+ pivot/tests/engine.test.js            |  31 +++
+ pivot/web/components/Optimizer.jsx    | 295 ++++++++++++++++++++++++++
+ pivot/web/pages/Backtest.jsx          |  19 +-
+ 10 files changed, 754 insertions(+), 28 deletions(-)
+ create mode 100644 pivot/server/engine/optimize.js
+ create mode 100644 pivot/web/components/Optimizer.jsx
+
+diff --git a/pivot/GUIDE.md b/pivot/GUIDE.md
+index d104a63..a6f6279 100644
+--- a/pivot/GUIDE.md
++++ b/pivot/GUIDE.md
+@@ -187,6 +187,18 @@ Badges on the Scanner and stock pages show these, and the stock page says when a
+ 
+ **Buy requests** also offer **Buy half** and **Remind me in 15 min**, in the app and on Telegram.
+ 
++## Finding the best settings (Backtest → Optimiser)
++
++1. **Get 10 years of data.** On the Backtest page, tap **Get 10 years of data** once, after your morning Zerodha login. It downloads 11 years: the extra year warms up the 200-day average. This takes about 10–20 minutes; progress shows on the Agents page.
++2. **Find the best settings.** Leave *Years of history* at 10 and *Apply the result automatically* on, then tap **Find the best settings**.
++   - Pivot studies the whole history once, then tests a few hundred combinations of your settings.
++   - It tunes them on the older 70% of the history and checks the best ones on the most recent 30%, which it has never seen.
++   - It only changes your settings if a combination made money in **both** periods, stayed within your drawdown limit, and beat your current settings.
++3. **Wait for the result.** On a small server this takes roughly 15–45 minutes, and the agents keep trading meanwhile. You get a notification when it finishes.
++4. **Review or undo.** The Optimiser card shows exactly what changed, with before-and-after results. **Undo** restores your old settings with one tap.
++
++Paper-trade new settings for a few weeks before trusting them with real money.
++
+ ## Starting paper trading again
+ 
+ **Settings → App & data → Erase paper-trading data** deletes every paper trade, the paper equity curve and the Dashboard statistics, and starts the paper account again at your paper capital. You can also erase the shadow trades (signals the agents tracked but did not take). Live (real-money) trades, settings, the watchlist and scores are never touched.
+diff --git a/pivot/server/agents/screener.js b/pivot/server/agents/screener.js
+index 9c251f6..096164e 100644
+--- a/pivot/server/agents/screener.js
++++ b/pivot/server/agents/screener.js
+@@ -132,15 +132,21 @@ export class Screener {
+       for (const u of list) {
+         const first = db.get('SELECT MIN(date) AS d FROM candles WHERE token = ?', u.token)?.d;
+         if (first && first > target) {
+-          // Kite allows ~2000 days of daily candles per request
+-          const to = addDays(first, -1);
+-          try {
+-            const candles = u.index ? await feed.indexHistory(target, to) : await feed.history(u.token, target, to);
+-            db.tx(() => {
+-              for (const c of candles) db.run('INSERT OR IGNORE INTO candles(token,date,open,high,low,close,volume) VALUES(?,?,?,?,?,?,?)', u.token, c.date, c.open, c.high, c.low, c.close, c.volume);
+-            });
+-          } catch (e) {
+-            if (e.type === 'TokenException') throw e;
++          // Kite allows ~2000 days of daily candles per request → fetch backwards in chunks
++          let to = addDays(first, -1);
++          while (to > target) {
++            const from = addDays(to, -1900) > target ? addDays(to, -1900) : target;
++            try {
++              const candles = u.index ? await feed.indexHistory(from, to) : await feed.history(u.token, from, to);
++              db.tx(() => {
++                for (const c of candles) db.run('INSERT OR IGNORE INTO candles(token,date,open,high,low,close,volume) VALUES(?,?,?,?,?,?,?)', u.token, c.date, c.open, c.high, c.low, c.close, c.volume);
++              });
++              if (!candles.length) break; // listed later than this — nothing older exists
++            } catch (e) {
++              if (e.type === 'TokenException') throw e;
++              break;
++            }
++            to = addDays(from, -1);
+           }
+         }
+         done++;
+diff --git a/pivot/server/api.js b/pivot/server/api.js
+index 9f0b8c1..56b9707 100644
+--- a/pivot/server/api.js
++++ b/pivot/server/api.js
+@@ -453,7 +453,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
+     '/api/agents/history',
+     wrap((req) => {
+       if (!ctx.demo && !ctx.kiteSession.connected) throw Object.assign(new Error('Log in to Kite first'), { status: 400 });
+-      ag().screener.extendHistory(Number(req.body?.years) || 5);
++      ag().screener.extendHistory(Math.max(1, Math.min(16, Number(req.body?.years) || 11)));
+       return { ok: true };
+     }),
+   );
+@@ -577,10 +577,13 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
+       const w = new Worker(new URL('./engine/backtestWorker.js', import.meta.url), {
+         workerData: { dbFile, params, indexToken, mode },
+         execArgv: ['--disable-warning=ExperimentalWarning'],
++        // years of Nifty 500 history need room; the server's swap covers small machines
++        resourceLimits: { maxOldGenerationSizeMb: mode === 'optimize' ? 3072 : 2048 },
+       });
+       w.on('message', (m) => {
+         if (m.type === 'progress') {
+           job.progress = phaseFrom + (phaseTo - phaseFrom) * m.progress;
++          if (m.phase) job.phase = m.phase;
+           ctx.bus.push('backtest', { id: job.id, status: job.status, progress: job.progress, phase: job.phase });
+         } else if (m.type === 'done') resolve(m.result);
+         else if (m.type === 'error') reject(new Error(m.error));
+@@ -653,6 +656,88 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
+       return { id };
+     }),
+   );
++  // ------------------------------------------------------------ settings optimiser (walk-forward)
++  const applyOptimized = (last, how) => {
++    const patch = last.result.recommended.patch;
++    const before = { rules: JSON.parse(JSON.stringify(ctx.settings.rules)), marketFilter: ctx.settings.marketFilter };
++    ctx.updateSettings(patch);
++    db.kvSet('lastOptimize', { ...last, appliedAt: new Date().toISOString(), appliedHow: how, before });
++    ctx.bus.log('Parent', `${how === 'auto' ? 'Applied' : 'You applied'} the optimiser's settings: ${last.result.changes.map((c) => `${c.label} ${c.from} → ${c.to}`).join('; ')}`, { level: 'success' });
++  };
++  app.post(
++    '/api/optimize',
++    wrap((req) => {
++      if ([...jobs.values()].some((j) => j.status === 'running')) throw Object.assign(new Error('A backtest or optimisation is already running'), { status: 400 });
++      const id = 'opt-' + Date.now();
++      const years = Math.max(2, Math.min(15, Number(req.body.years) || 10));
++      const fromDate = new Date(ctx.clock.now().getTime() - years * 365.25 * 86400000).toISOString().slice(0, 10);
++      const params = {
++        from: req.body.from || fromDate,
++        to: req.body.to || null,
++        capital: Number(req.body.capital) || ctx.settings.paperCapital,
++        rules: ctx.settings.rules,
++        marketFilter: ctx.settings.marketFilter,
++        maxDrawdownPct: Math.max(3, Math.min(50, Number(req.body.maxDrawdownPct) || 15)),
++        locked: Array.isArray(req.body.locked) ? req.body.locked : ['positionPct'],
++        autoApply: req.body.autoApply !== false,
++        years,
++      };
++      const job = { id, kind: 'optimize', status: 'running', progress: 0, phase: 'analyse', params, started: new Date().toISOString() };
++      jobs.set(id, job);
++      ctx.bus.log('Analyst', `Optimiser started on ${years} years of history — this can take a while; the agents keep working meanwhile`);
++      runWorker('optimize', params, job, 0, 1)
++        .then((result) => {
++          job.status = 'done';
++          job.progress = 1;
++          job.result = result;
++          db.kvSet('lastOptimize', job);
++          ctx.bus.log('Analyst', result.keepCurrent ? `Optimiser finished (${result.years} years, ${result.tested} combinations) — your current settings were the most robust` : `Optimiser finished (${result.years} years, ${result.tested} combinations) — ${result.changes.length} change${result.changes.length === 1 ? '' : 's'} recommended`, { level: 'success' });
++          if (params.autoApply && !result.keepCurrent) applyOptimized(job, 'auto');
++          const r = result.recommended.full.stats;
++          ctx.notify?.('weeklyReport', `🧪 <b>Optimiser finished</b> · ${result.years} years\n${result.keepCurrent ? 'Your current settings were the most robust — nothing changed.' : `${params.autoApply ? 'Applied' : 'Recommends'} ${result.changes.length} change${result.changes.length === 1 ? '' : 's'}.`}\nBacktest: ${r.totalReturnPct}% total, ${r.cagrPct ?? '—'}% a year, worst drawdown ${r.maxDrawdownPct}%`);
++        })
++        .catch((e) => {
++          job.status = 'error';
++          job.error = e.message;
++          ctx.bus.log('Analyst', `Optimiser failed: ${e.message}`, { level: 'error' });
++        })
++        .finally(() => ctx.bus.push('backtest', { id, status: job.status, progress: job.progress }));
++      return { id };
++    }),
++  );
++  app.get(
++    '/api/optimize/:id',
++    wrap((req) => {
++      if (req.params.id === 'last') {
++        const running = [...jobs.values()].find((j) => j.kind === 'optimize' && j.status === 'running');
++        return running || db.kvGet('lastOptimize') || null;
++      }
++      const j = jobs.get(req.params.id);
++      if (!j) throw Object.assign(new Error('Not found'), { status: 404 });
++      return j;
++    }),
++  );
++  app.post(
++    '/api/optimize/apply',
++    wrap(() => {
++      const last = db.kvGet('lastOptimize');
++      if (!last?.result?.recommended?.patch) throw Object.assign(new Error('Run the optimiser first'), { status: 400 });
++      applyOptimized(last, 'you');
++      return { settings: ctx.settings };
++    }),
++  );
++  app.post(
++    '/api/optimize/undo',
++    wrap(() => {
++      const last = db.kvGet('lastOptimize');
++      if (!last?.before) throw Object.assign(new Error('Nothing to undo'), { status: 400 });
++      ctx.updateSettings({ rules: last.before.rules, marketFilter: last.before.marketFilter });
++      db.kvSet('lastOptimize', { ...last, appliedAt: null, before: null, undoneAt: new Date().toISOString() });
++      ctx.bus.log('Parent', 'You restored your settings from before the optimiser', { level: 'warn' });
++      return { settings: ctx.settings };
++    }),
++  );
++
+   app.get(
+     '/api/backtest/:id',
+     wrap((req) => {
+diff --git a/pivot/server/engine/analyze.js b/pivot/server/engine/analyze.js
+index 6f9163c..078ac4b 100644
+--- a/pivot/server/engine/analyze.js
++++ b/pivot/server/engine/analyze.js
+@@ -11,10 +11,10 @@ export function prepareUniverse(stocks) {
+   // stocks: [{ symbol, name, industry, token, candles: [{date,open,high,low,close,volume}] }]
+   return stocks
+     .filter((s) => s.candles && s.candles.length >= 60)
+-    .map((s) => {
+-      const c = columns(s.candles);
++    .map(({ candles, ...s }) => {
++      const c = columns(candles);
+       const idx = new Map(c.date.map((d, i) => [d, i]));
+-      return { ...s, c, m: movingAverages(c), idx };
++      return { ...s, c, m: movingAverages(c), idx }; // the raw candle objects are not kept (saves memory)
+     });
+ }
+ 
+diff --git a/pivot/server/engine/backtest.js b/pivot/server/engine/backtest.js
+index 2499edd..6439eec 100644
+--- a/pivot/server/engine/backtest.js
++++ b/pivot/server/engine/backtest.js
+@@ -15,11 +15,55 @@ import { round } from './vcp.js';
+ import { roundTick } from './indicators.js';
+ import { monteCarlo, byPeriod } from './robustness.js';
+ 
+-export function runBacktest({ stocks, index, from, to, capital = 500000, rules = DEFAULT_RULES, marketFilter = 'pause', compounding = true, onProgress }) {
+-  const R = mergeRules(rules);
++/** Keep only what the simulation and scoring read from a day's analysis (years of it must fit in memory). */
++const VCP_KEYS = ['valid', 'stage', 'pivot', 'stop', 'stopPct', 'distToPivotPct', 'count', 'depthPct', 'finalDepthPct', 'baseBars', 'dryUpDays', 'higherLows', 'lastVolRatio', 'priorAdvancePct', 'shrinkViolations', 'tightnessPct', 'upDownVol'];
++function compactAnalysis(res) {
++  const stocks = [];
++  for (const a of res.stocks) {
++    if ((a.trend?.passCount ?? 0) < 7) continue; // can't be bought or re-entered
++    const t = a.trend;
++    const o = {
++      symbol: a.symbol,
++      industry: a.industry,
++      rsRating: a.rsRating,
++      rsLineHigh: a.rsLineHigh,
++      sectorRs: a.sectorRs,
++      stage: a.stage,
++      avgVol50: a.avgVol50,
++      turnoverCr: a.turnoverCr,
++      trend: { pass: t.pass, passCount: t.passCount, ma200SlopePct: t.ma200SlopePct, above200Pct: t.above200Pct, fromHighPct: t.fromHighPct },
++      vcp: { valid: false, stage: a.vcp?.stage },
++    };
++    if (a.vcp?.valid) {
++      o.vcp = {};
++      for (const k of VCP_KEYS) if (a.vcp[k] !== undefined) o.vcp[k] = a.vcp[k];
++      o.vcp.contractions = (a.vcp.contractions || []).map((k) => ({ depthPct: k.depthPct }));
++    }
++    stocks.push(o);
++  }
++  return { market: { regime: res.market?.regime }, stocks };
++}
++
++/**
++ * The slow part of a backtest — analysing every stock on every day — done once, so many settings
++ * can then be simulated quickly on the same history (used by the optimiser). Results are identical.
++ */
++export function precomputeAnalyses({ stocks, index, from, to, onProgress }) {
+   const prepared = prepareUniverse(stocks);
+-  const bySym = new Map(prepared.map((s) => [s.symbol, s]));
+   const dates = index.map((c) => c.date).filter((d) => (!from || d >= from) && (!to || d <= to));
++  const analyses = new Map();
++  dates.forEach((d, di) => {
++    analyses.set(d, compactAnalysis(analyzeUniverse(prepared, { indexCandles: index, date: d })));
++    if (onProgress && di % 10 === 0) onProgress(di / dates.length);
++  });
++  return { prepared, analyses, dates };
++}
++
++export function runBacktest({ stocks, index, from, to, capital = 500000, rules = DEFAULT_RULES, marketFilter = 'pause', compounding = true, onProgress, pre, light = false }) {
++  const R = mergeRules(rules);
++  const prepared = pre ? pre.prepared : prepareUniverse(stocks);
++  const bySym = new Map(prepared.map((s) => [s.symbol, s]));
++  const dates = (pre ? pre.dates : index.map((c) => c.date)).filter((d) => (!from || d >= from) && (!to || d <= to));
+   let cash = capital;
+   const open = [];
+   const closed = [];
+@@ -257,7 +301,7 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
+     }, 0);
+     equity.push({ date: d, equity: round(cash + invested, 0), cash: round(cash, 0), invested: round(invested, 0), positions: open.length });
+ 
+-    prevAnalysis = analyzeUniverse(prepared, { indexCandles: index, date: d });
++    prevAnalysis = pre ? pre.analyses.get(d) : analyzeUniverse(prepared, { indexCandles: index, date: d });
+     if (onProgress && di % 20 === 0) onProgress(di / dates.length);
+   }
+ 
+@@ -266,8 +310,8 @@ export function runBacktest({ stocks, index, from, to, capital = 500000, rules =
+   return {
+     params: { from: dates[0], to: dates[dates.length - 1], capital, rules: R, marketFilter, compounding },
+     stats,
+-    monteCarlo: monteCarlo(trades, equity, capital),
+-    periods: byPeriod(trades, equity, capital),
++    monteCarlo: light ? null : monteCarlo(trades, equity, capital),
++    periods: light ? null : byPeriod(trades, equity, capital),
+     equity,
+     trades: trades.sort((a, b) => (a.entryDate < b.entryDate ? 1 : -1)),
+     openAtEnd: open.map((p) => ({ symbol: p.symbol, entryDate: p.entryDate, entryPrice: p.entryPrice, qtyOpen: p.qtyOpen, stop: p.stop })),
+diff --git a/pivot/server/engine/backtestWorker.js b/pivot/server/engine/backtestWorker.js
+index aef0b10..31c6dad 100644
+--- a/pivot/server/engine/backtestWorker.js
++++ b/pivot/server/engine/backtestWorker.js
+@@ -6,18 +6,17 @@ import { parentPort, workerData } from 'node:worker_threads';
+ import { openDb } from '../core/db.js';
+ import { runBacktest } from './backtest.js';
+ import { findBreakoutDays, runBacktest15 } from './backtest15.js';
++import { optimize } from './optimize.js';
+ 
+ const { dbFile, params, indexToken, mode = 'daily' } = workerData;
+ try {
+   const db = openDb(dbFile);
+   const uni = db.all('SELECT * FROM universe WHERE active = 1');
+   const until = params.to || '9999-12-31';
+-  const stocks = uni.map((u) => ({
+-    ...u,
+-    candles: db.all('SELECT date,open,high,low,close,volume FROM candles WHERE token = ? AND date <= ? ORDER BY date', u.token, until),
+-  }));
++  const stmt = db.raw.prepare('SELECT date,open,high,low,close,volume FROM candles WHERE token = ? AND date <= ? ORDER BY date');
++  const stocks = uni.map((u) => ({ ...u, candles: stmt.all(u.token, until) }));
+   const index = db.all('SELECT date,open,high,low,close,volume FROM candles WHERE token = ? AND date <= ? ORDER BY date', indexToken, until);
+-  if (index.length < 260) throw new Error('Not enough history yet — at least ~1 year of data is needed. Use “Get 5 years of data” first.');
++  if (index.length < 260) throw new Error('Not enough history yet — at least ~1 year of data is needed. Use “Get 10 years of data” first.');
+   // need ~250 bars of warm-up for the 200-day average + 52-week checks
+   const earliest = index[Math.min(index.length - 1, 252)].date;
+   const from = params.from && params.from > earliest ? params.from : earliest;
+@@ -25,7 +24,21 @@ try {
+   const common = { stocks, index, from, to: params.to, capital: params.capital, rules: params.rules, marketFilter: params.marketFilter, compounding: params.compounding !== false, onProgress: progress };
+ 
+   let result;
+-  if (mode === 'scan') result = findBreakoutDays(common);
++  if (mode === 'optimize')
++    result = optimize({
++      stocks,
++      index,
++      from,
++      to: params.to,
++      capital: params.capital,
++      baseRules: params.rules,
++      baseMarketFilter: params.marketFilter,
++      maxDrawdownPct: params.maxDrawdownPct,
++      locked: params.locked,
++      releaseInput: true,
++      onProgress: (p) => parentPort.postMessage({ type: 'progress', progress: p.progress, phase: p.phase }),
++    });
++  else if (mode === 'scan') result = findBreakoutDays(common);
+   else if (mode === 'run15') {
+     const stmt = db.raw.prepare('SELECT time, open, high, low, close, volume FROM candles15 WHERE token = ? AND date = ? ORDER BY time');
+     result = runBacktest15({ ...common, getBars: (token, date) => stmt.all(token, date).map((r) => ({ ...r })) });
+diff --git a/pivot/server/engine/optimize.js b/pivot/server/engine/optimize.js
+new file mode 100644
+index 0000000..a632ddc
+--- /dev/null
++++ b/pivot/server/engine/optimize.js
+@@ -0,0 +1,227 @@
++// Settings optimiser: searches the EXISTING rules for the combination with the best
++// return-to-drawdown, using walk-forward validation to avoid fitting to noise.
++//
++//  1. Analyse history once (precomputeAnalyses).
++//  2. Split dates: first ~70% = "training", last ~30% = "test" (never seen while tuning).
++//  3. Random search + one-setting-at-a-time refinement on the training period.
++//  4. The best training candidates are re-run on the test period; the winner is the one whose
++//     WORSE period is best (robust), not the one with the flashiest training result.
++//
++// Score = annual return ÷ max drawdown (the "MAR" ratio), penalised when drawdown exceeds
++// your limit or when there are too few trades to trust.
++
++import { precomputeAnalyses, runBacktest } from './backtest.js';
++import { rng } from '../demo/synth.js';
++import { round } from './vcp.js';
++
++/** The knobs that already exist in Pivot's rules, with sensible ranges. */
++export const SEARCH_SPACE = {
++  minScore: [55, 60, 65, 70, 75, 80],
++  positionPct: [8, 10, 12.5, 15],
++  sizing: ['percent', 'risk'],
++  maxStopPct: [5, 5.5, 6],
++  partialAtPct: [8, 10, 12, 15, 20],
++  trailMethod: ['ema21', 'sma50', 'pct10'],
++  buyZonePct: [2, 3, 5],
++  minVolPace: [1.2, 1.5, 2],
++  marketFilter: ['pause', 'half'],
++  confirm: [true, false],
++  twoStage: [true, false],
++  failedExit: [true, false],
++  timeExitDays: [0, 5, 7, 10, 15],
++  reentry: [true, false],
++  minTurnoverCr: [0, 5, 10, 25],
++  minSectorRank: [0, 50],
++  eightWeek: [true, false],
++  climax: [true, false],
++};
++
++export const PARAM_LABELS = {
++  minScore: 'Minimum setup score',
++  positionPct: 'Position size (% of capital)',
++  maxStopPct: 'Maximum stop (%)',
++  partialAtPct: 'Sell ⅓ at (+%)',
++  trailMethod: 'Trailing exit',
++  buyZonePct: 'Buy zone above pivot (%)',
++  minVolPace: 'Breakout volume (×)',
++  marketFilter: 'In a market correction',
++  confirm: 'Breakout confirmation',
++  twoStage: 'Two-stage buy',
++  failedExit: 'Sell failed breakouts',
++  reentry: 'Re-entry after stop-out',
++  sizing: 'Position sizing',
++  timeExitDays: 'Time exit after (days, 0 = off)',
++  minTurnoverCr: 'Minimum daily turnover (₹ crore)',
++  minSectorRank: 'Only leading sectors (0 = off)',
++  eightWeek: '8-week hold for fast movers',
++  climax: 'Sell into a climax run',
++};
++
++/** Read the current settings into a parameter set. */
++export function paramsFromSettings(rules, marketFilter) {
++  return {
++    minScore: rules.minScore,
++    positionPct: rules.positionPct,
++    maxStopPct: rules.maxStopPct,
++    partialAtPct: rules.partialAtPct,
++    trailMethod: rules.trailMethod,
++    buyZonePct: rules.buyZonePct,
++    minVolPace: rules.minVolPace,
++    marketFilter,
++    confirm: !!rules.confirm?.enabled,
++    twoStage: !!rules.twoStage?.enabled,
++    failedExit: !!rules.failedExit?.enabled,
++    reentry: !!rules.reentry?.enabled,
++    sizing: rules.sizing?.method || 'percent',
++    timeExitDays: rules.timeExit?.enabled ? rules.timeExit.days || 7 : 0,
++    minTurnoverCr: rules.filters?.minTurnoverCr ?? 10,
++    minSectorRank: rules.filters?.minSectorRank ?? 0,
++    eightWeek: rules.winners?.eightWeek?.enabled !== false,
++    climax: rules.winners?.climax?.enabled !== false,
++  };
++}
++
++/** Turn a parameter set into a settings patch (what "Apply" saves). */
++export function settingsPatch(p, baseRules) {
++  return {
++    marketFilter: p.marketFilter,
++    rules: {
++      minScore: p.minScore,
++      positionPct: p.positionPct,
++      maxPositions: p.sizing === 'risk' ? baseRules.maxPositions : Math.max(1, Math.round(100 / p.positionPct)),
++      maxStopPct: p.maxStopPct,
++      partialAtPct: p.partialAtPct,
++      trailMethod: p.trailMethod,
++      buyZonePct: p.buyZonePct,
++      minVolPace: p.minVolPace,
++      confirm: { ...(baseRules.confirm || {}), enabled: p.confirm },
++      twoStage: { ...(baseRules.twoStage || {}), enabled: p.twoStage },
++      failedExit: { ...(baseRules.failedExit || {}), enabled: p.failedExit },
++      reentry: { ...(baseRules.reentry || {}), enabled: p.reentry },
++      sizing: { ...(baseRules.sizing || {}), method: p.sizing },
++      timeExit: { ...(baseRules.timeExit || {}), enabled: p.timeExitDays > 0, days: p.timeExitDays || baseRules.timeExit?.days || 7 },
++      filters: { ...(baseRules.filters || {}), minTurnoverCr: p.minTurnoverCr, minSectorRank: p.minSectorRank },
++      winners: { ...(baseRules.winners || {}), eightWeek: { ...(baseRules.winners?.eightWeek || {}), enabled: p.eightWeek }, climax: { ...(baseRules.winners?.climax || {}), enabled: p.climax } },
++    },
++  };
++}
++
++const key = (p) => JSON.stringify(Object.keys(SEARCH_SPACE).map((k) => p[k]));
++
++export function optimize({ stocks, index, from, to, capital = 500000, baseRules, baseMarketFilter = 'pause', maxDrawdownPct = 15, trials = 220, minTrades = 12, seed = 1, locked = ['positionPct'], changePenalty = 0.05, releaseInput = false, onProgress }) {
++  const progress = (phase, p) => onProgress?.({ phase, progress: p });
++  const pre = precomputeAnalyses({ stocks, index, from, to, onProgress: (p) => progress('analyse', p * 0.45) });
++  if (releaseInput) for (const s of stocks) s.candles = null; // the analysis keeps its own compact copy
++  const dates = pre.dates;
++  if (dates.length < 250) throw new Error('Not enough history to optimise — at least ~2 years is needed (use “Get 10 years of data”).');
++  const split = dates[Math.floor(dates.length * 0.7)];
++  const train = { from: dates[0], to: split };
++  const test = { from: dates[Math.floor(dates.length * 0.7) + 1], to: dates[dates.length - 1] };
++
++  const cache = new Map();
++  const run = (p, period) => {
++    const k = key(p) + period.from;
++    if (cache.has(k)) return cache.get(k);
++    const patch = settingsPatch(p, baseRules);
++    const r = runBacktest({ pre, from: period.from, to: period.to, capital, rules: { ...baseRules, ...patch.rules }, marketFilter: patch.marketFilter, light: true });
++    const s = r.stats;
++    const years = Math.max(0.25, (new Date(period.to) - new Date(period.from)) / (365 * 86400000));
++    const annual = (Math.pow(Math.max(0.01, 1 + s.totalReturnPct / 100), 1 / years) - 1) * 100;
++    const dd = Math.abs(s.maxDrawdownPct);
++    let score = s.trades ? annual / Math.max(dd, 3) : 0; // no trades = no evidence either way
++    if (score > 0 && s.trades < minTrades) score *= s.trades / minTrades; // too few trades to trust: shrink towards 0
++    if (dd > maxDrawdownPct) score -= (dd - maxDrawdownPct) * 0.25; // over your drawdown limit
++    const m = { score: round(score, 3), annualPct: round(annual, 2), returnPct: s.totalReturnPct, maxDrawdownPct: s.maxDrawdownPct, trades: s.trades, winRate: s.winRate, profitFactor: s.profitFactor, avgWinPct: s.avgWinPct, avgLossPct: s.avgLossPct };
++    cache.set(k, m);
++    return m;
++  };
++
++  const r = rng(seed);
++  const current = paramsFromSettings(baseRules, baseMarketFilter);
++  const tried = [];
++  const consider = (p) => {
++    const m = run(p, train);
++    tried.push({ p, train: m });
++    return m.score;
++  };
++
++  // 1) random search (always includes your current settings). Locked settings keep your value.
++  consider(current);
++  const names = Object.keys(SEARCH_SPACE).filter((n) => !locked.includes(n));
++  const space = Object.fromEntries(Object.keys(SEARCH_SPACE).map((n) => [n, locked.includes(n) ? [current[n]] : SEARCH_SPACE[n]]));
++  for (let i = 0; i < trials; i++) {
++    const p = Object.fromEntries(Object.keys(space).map((n) => [n, r.pick(space[n])]));
++    consider(p);
++    if (i % 5 === 0) progress('search', 0.45 + 0.3 * (i / trials));
++  }
++  // 2) refine the best few: change one setting at a time while it keeps improving
++  const ranked = () => [...new Map(tried.map((t) => [key(t.p), t])).values()].sort((a, b) => b.train.score - a.train.score);
++  const seeds = ranked().slice(0, 3).map((t) => t.p);
++  seeds.forEach((start, si) => {
++    let best = { ...start };
++    let bestScore = run(best, train).score;
++    for (let pass = 0; pass < 2; pass++) {
++      let improved = false;
++      for (const n of names) {
++        for (const v of space[n]) {
++          if (v === best[n]) continue;
++          const cand = { ...best, [n]: v };
++          const sc = consider(cand);
++          if (sc > bestScore + 1e-6) {
++            best = cand;
++            bestScore = sc;
++            improved = true;
++          }
++        }
++      }
++      if (!improved) break;
++    }
++    progress('refine', 0.75 + 0.15 * ((si + 1) / seeds.length));
++  });
++
++  // 3) validate the top candidates on the unseen test period; choose the most robust
++  const finalists = ranked().slice(0, 10);
++  const nChanges = (p) => names.filter((n) => p[n] !== current[n]).length;
++  for (const f of finalists) {
++    f.test = run(f.p, test);
++    // robust = the worse of the two periods, minus a little for every setting changed
++    f.robust = round(Math.min(f.train.score, f.test.score) - changePenalty * nChanges(f.p), 3);
++    // never recommend settings that lost money in either period or broke the drawdown limit
++    f.eligible = f.train.annualPct > 0 && f.test.annualPct > 0 && Math.abs(f.test.maxDrawdownPct) <= maxDrawdownPct;
++  }
++  progress('validate', 0.97);
++  finalists.sort((a, b) => (b.eligible - a.eligible) || b.robust - a.robust);
++  const cur = { p: current, train: run(current, train), test: run(current, test) };
++  cur.robust = round(Math.min(cur.train.score, cur.test.score), 3);
++  const best = finalists.find((f) => f.eligible);
++  const keepCurrent = !best || best.robust <= cur.robust;
++
++  // full-period result for the recommendation and for your current settings
++  const fullOf = (p) => {
++    const patch = settingsPatch(p, baseRules);
++    const res = runBacktest({ pre, capital, rules: { ...baseRules, ...patch.rules }, marketFilter: patch.marketFilter });
++    return { stats: res.stats, equity: thin(res.equity), monteCarlo: res.monteCarlo, periods: res.periods };
++  };
++  const recommended = keepCurrent ? cur : best;
++  const changes = Object.keys(SEARCH_SPACE).filter((n) => recommended.p[n] !== current[n]).map((n) => ({ key: n, label: PARAM_LABELS[n], from: current[n], to: recommended.p[n] }));
++  progress('done', 1);
++  return {
++    years: Math.round(((new Date(dates[dates.length - 1]) - new Date(dates[0])) / (365.25 * 86400000)) * 10) / 10,
++    stocks: pre.prepared.length,
++    periods: { train, test },
++    tested: new Set(tried.map((t) => key(t.p))).size,
++    locked,
++    maxDrawdownPct,
++    current: { params: current, train: cur.train, test: cur.test, robust: cur.robust, full: fullOf(current) },
++    recommended: { params: recommended.p, train: recommended.train, test: recommended.test, robust: recommended.robust, full: fullOf(recommended.p), patch: settingsPatch(recommended.p, baseRules) },
++    keepCurrent,
++    changes,
++    finalists: finalists.map((f) => ({ params: f.p, train: f.train, test: f.test, robust: f.robust, eligible: f.eligible })),
++    reason: !best ? 'None of the alternatives made money in both the tuning and the unseen test period within your drawdown limit.' : keepCurrent ? 'No alternative was clearly more robust than your current settings.' : null,
++  };
++}
++
++function thin(eq) {
++  const step = Math.max(1, Math.floor(eq.length / 300));
++  return eq.filter((_, i) => i % step === 0 || i === eq.length - 1).map((e) => ({ date: e.date, equity: e.equity }));
++}
+diff --git a/pivot/tests/engine.test.js b/pivot/tests/engine.test.js
+index 5b70077..3bfca4a 100644
+--- a/pivot/tests/engine.test.js
++++ b/pivot/tests/engine.test.js
+@@ -335,3 +335,34 @@ test('rule report card groups trades and suggests changes where a group loses',
+   assert.equal(sc.buckets.find((b) => b.label === '75–84 (A)').avgR, 3);
+   assert.ok(rc.tips.some((t) => /minimum score to 75/.test(t.text)), JSON.stringify(rc.tips));
+ });
++
++test('optimiser: walk-forward search keeps locked settings and never recommends something worse than current', async () => {
++  const { optimize, settingsPatch, paramsFromSettings } = await import('../server/engine/optimize.js');
++  const m = generateMarket({ seed: 7, stocks: 60, days: 800 });
++  const dates = tradingDates(m);
++  const r = optimize({ stocks: m.stocks, index: m.index, from: dates[260], baseRules: DEFAULT_RULES, trials: 30, locked: ['positionPct', 'maxStopPct'] });
++  assert.ok(r.tested > 30);
++  assert.ok(r.periods.train.to < r.periods.test.from, 'test period comes after the tuning period');
++  assert.equal(r.recommended.params.positionPct, DEFAULT_RULES.positionPct, 'locked: position size');
++  assert.equal(r.recommended.params.maxStopPct, DEFAULT_RULES.maxStopPct, 'locked: stop');
++  assert.ok(r.keepCurrent || r.recommended.robust > r.current.robust, 'only recommends a more robust set');
++  // the new rules round-trip through a settings patch
++  const p = paramsFromSettings(DEFAULT_RULES, 'pause');
++  const back = paramsFromSettings({ ...DEFAULT_RULES, ...settingsPatch({ ...p, timeExitDays: 10, minTurnoverCr: 25, sizing: 'risk', climax: false }, DEFAULT_RULES).rules }, 'pause');
++  assert.equal(back.timeExitDays, 10);
++  assert.equal(back.minTurnoverCr, 25);
++  assert.equal(back.sizing, 'risk');
++  assert.equal(back.climax, false);
++});
++
++test('precomputed history gives the same backtest as the normal one', async () => {
++  const { precomputeAnalyses } = await import('../server/engine/backtest.js');
++  const m = generateMarket({ seed: 5, stocks: 50, days: 650 });
++  const dates = tradingDates(m);
++  const R = { ...DEFAULT_RULES, reentry: { ...DEFAULT_RULES.reentry, enabled: false } };
++  const a = runBacktest({ stocks: m.stocks, index: m.index, from: dates[300], rules: R });
++  const pre = precomputeAnalyses({ stocks: m.stocks, index: m.index, from: dates[300] });
++  const b = runBacktest({ pre, from: dates[300], rules: R });
++  assert.equal(b.stats.trades, a.stats.trades);
++  assert.equal(b.stats.totalReturnPct, a.stats.totalReturnPct);
++});
+diff --git a/pivot/web/components/Optimizer.jsx b/pivot/web/components/Optimizer.jsx
+new file mode 100644
+index 0000000..df80cee
+--- /dev/null
++++ b/pivot/web/components/Optimizer.jsx
+@@ -0,0 +1,295 @@
++import { useEffect, useState } from 'react';
++import { Wand2, Check, Lock, Undo2, Download } from 'lucide-react';
++import { api, useApi, pct, niceDate } from '../lib.js';
++import { Card, Button, NumberField, Toggle, Sheet, Pill, Section } from './ui.jsx';
++import { EquityChart } from './Charts.jsx';
++
++const PHASES = {
++  analyse: 'Step 1 of 4 · Studying the history of every stock…',
++  search: 'Step 2 of 4 · Testing combinations of your settings…',
++  refine: 'Step 3 of 4 · Fine-tuning the best ones…',
++  validate: 'Step 4 of 4 · Checking them on recent data they never saw…',
++  done: 'Finishing…',
++};
++
++const fmtVal = (k, v) => {
++  if (typeof v === 'boolean') return v ? 'On' : 'Off';
++  if (k === 'trailMethod') return { ema21: 'Close < 21 EMA', sma50: 'Close < 50 DMA', pct10: '10% trail' }[v] || v;
++  if (k === 'marketFilter') return { pause: 'Pause new buys', half: 'Half size', off: 'Ignore' }[v] || v;
++  if (k === 'minVolPace') return `${v}×`;
++  if (['positionPct', 'maxStopPct', 'partialAtPct', 'buyZonePct'].includes(k)) return `${v}%`;
++  if (k === 'sizing') return v === 'risk' ? 'By risk' : 'Same % of capital';
++  if (k === 'timeExitDays') return v ? `${v} days` : 'Off';
++  if (k === 'minTurnoverCr') return v ? `₹${v} cr` : 'Off';
++  if (k === 'minSectorRank') return v ? 'Leading sectors only' : 'Off';
++  return String(v);
++};
++
++export default function Optimizer({ onVerify }) {
++  const last = useApi('/optimize/last');
++  const [job, setJob] = useState(null);
++  const [maxDD, setMaxDD] = useState(15);
++  const [lockSize, setLockSize] = useState(true);
++  const [lockStop, setLockStop] = useState(false);
++  const [lockChecks, setLockChecks] = useState(false);
++  const [years, setYears] = useState(10);
++  const [autoApply, setAutoApply] = useState(true);
++  const [hist, setHist] = useState('');
++  const [err, setErr] = useState('');
++  const [ask, setAsk] = useState(false);
++  const [applied, setApplied] = useState(false);
++
++  // pick up a run that is still going (e.g. after leaving the page)
++  useEffect(() => {
++    if (!job && last.data?.status === 'running') setJob(last.data);
++  }, [last.data]);
++
++  useEffect(() => {
++    if (!job || job.status !== 'running') return;
++    const t = setInterval(async () => {
++      try {
++        const j = await api(`/optimize/${job.id}`);
++        setJob(j);
++        if (j.status !== 'running') last.reload();
++      } catch {
++        /* ignore */
++      }
++    }, 1500);
++    return () => clearInterval(t);
++  }, [job?.id, job?.status]);
++
++  const run = async () => {
++    setErr('');
++    setApplied(false);
++    const locked = [...(lockSize ? ['positionPct'] : []), ...(lockStop ? ['maxStopPct'] : []), ...(lockChecks ? ['confirm', 'twoStage', 'failedExit'] : [])];
++    try {
++      const r = await api('/optimize', { method: 'POST', body: { maxDrawdownPct: maxDD, locked, years, autoApply } });
++      setJob({ id: r.id, status: 'running', progress: 0, phase: 'analyse' });
++    } catch (e) {
++      setErr(e.message);
++    }
++  };
++  const getHistory = async () => {
++    try {
++      await api('/agents/history', { method: 'POST', body: { years: years + 1 } });
++      setHist(`Downloading ${years + 1} years of daily candles for the Nifty 500 in the background (1 extra year is needed to warm up the 200-day average). This takes about 10–20 minutes — watch the Agents page, then run the optimiser.`);
++    } catch (e) {
++      setHist(e.message);
++    }
++  };
++  const undo = async () => {
++    await api('/optimize/undo', { method: 'POST' });
++    last.reload();
++  };
++  const apply = async () => {
++    await api('/optimize/apply', { method: 'POST' });
++    setAsk(false);
++    setApplied(true);
++    last.reload();
++  };
++
++  const res = job?.status === 'done' ? job.result : job?.status === 'running' ? null : last.data?.result;
++  const appliedAt = last.data?.appliedAt;
++
++  return (
++    <Section title="Optimiser" subtitle="Finds the settings with the best profit for the smallest drawdown — using only your existing rules">
++      <Card className="p-5 sm:p-6">
++        <p className="text-ink2 text-[15px]">
++          Tests a few hundred combinations of your settings (score, sizing, stop, profit level, trailing, buy zone, volume, market filter, breakout checks, time exit, turnover, sector
++          filter, big-winner rules) on up to 10 years of real Nifty 500 history. To avoid fitting old noise, it tunes on the older 70% of the data and then checks the winners on the
++          most recent 30% it has never seen. Settings that change less are preferred, and nothing is recommended unless it made money in both periods within your drawdown limit.
++        </p>
++        <div className="mt-4 flex flex-wrap items-center gap-3">
++          <Button tone="soft" icon={Download} onClick={getHistory}>
++            Get {years} years of data
++          </Button>
++          <span className="text-ink3 text-[13px] flex-1 min-w-[200px]">Do this once before the first run. Needs your daily Zerodha login.</span>
++        </div>
++        {hist && <div className="mt-2 text-[14px] font-semibold">{hist}</div>}
++        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3 mt-5">
++          <div className="flex items-center justify-between gap-3">
++            <span className="font-semibold">Years of history</span>
++            <NumberField value={years} onChange={(v) => setYears(Math.max(2, Math.min(15, Math.round(v))))} suffix="years" width="w-20" />
++          </div>
++          <div className="flex items-center justify-between gap-3">
++            <span className="font-semibold">Apply the result automatically</span>
++            <Toggle checked={autoApply} onChange={setAutoApply} />
++          </div>
++          <div className="flex items-center justify-between gap-3">
++            <span className="font-semibold">Largest drawdown I accept</span>
++            <NumberField value={maxDD} onChange={setMaxDD} suffix="%" width="w-20" />
++          </div>
++          <div className="flex items-center justify-between gap-3">
++            <span className="font-semibold flex items-center gap-1.5">
++              <Lock size={15} className="text-ink3" /> Keep my position size
++            </span>
++            <Toggle checked={lockSize} onChange={setLockSize} />
++          </div>
++          <div className="flex items-center justify-between gap-3">
++            <span className="font-semibold flex items-center gap-1.5">
++              <Lock size={15} className="text-ink3" /> Keep my stop limit
++            </span>
++            <Toggle checked={lockStop} onChange={setLockStop} />
++          </div>
++          <div className="flex items-center justify-between gap-3">
++            <span className="font-semibold flex items-center gap-1.5">
++              <Lock size={15} className="text-ink3" /> Keep breakout checks as they are
++            </span>
++            <Toggle checked={lockChecks} onChange={setLockChecks} />
++          </div>
++        </div>
++        <Button className="mt-5" size="lg" icon={Wand2} onClick={run} loading={job?.status === 'running'}>
++          Find the best settings
++        </Button>
++        {err && <div className="mt-3 text-coral font-semibold">{err}</div>}
++        {job?.status === 'running' && (
++          <div className="mt-5">
++            <div className="font-semibold mb-2">
++              {PHASES[job.phase] || 'Working…'} {Math.round((job.progress || 0) * 100)}%
++            </div>
++            <div className="h-3 rounded-full bg-card2 overflow-hidden">
++              <div className="h-full bg-lav rounded-full transition-all" style={{ width: `${(job.progress || 0) * 100}%` }} />
++            </div>
++            <div className="text-ink3 text-[14px] mt-2">10 years of Nifty 500 data takes roughly 15–45 minutes on a small server. You can leave this page or close the app — the result is saved{autoApply ? ', applied automatically if it is better,' : ''} and you'll get a notification.</div>
++          </div>
++        )}
++        {job?.status === 'error' && <div className="mt-4 text-coral font-semibold">{job.error}</div>}
++      </Card>
++
++      {res && <Results r={res} appliedAt={applied ? new Date().toISOString() : appliedAt} appliedHow={last.data?.appliedHow} canUndo={!!last.data?.before} onUndo={undo} onApply={() => setAsk(true)} onVerify={onVerify} />}
++
++      <Sheet open={ask} onClose={() => setAsk(false)} title="Apply the recommended settings?">
++        {res && (
++          <>
++            <ul className="space-y-2 text-[17px]">
++              {res.changes.map((c) => (
++                <li key={c.key}>
++                  • {c.label}: <b>{fmtVal(c.key, c.from)}</b> → <b>{fmtVal(c.key, c.to)}</b>
++                </li>
++              ))}
++            </ul>
++            <p className="text-ink2 mt-4">These settings will be used from the next trade. You can change any of them again in Settings. A good habit: paper-trade them for a few weeks first.</p>
++            <div className="grid grid-cols-2 gap-3 mt-6">
++              <Button tone="soft" size="lg" onClick={() => setAsk(false)}>
++                Not now
++              </Button>
++              <Button tone="mint" size="lg" icon={Check} onClick={apply}>
++                Apply
++              </Button>
++            </div>
++          </>
++        )}
++      </Sheet>
++    </Section>
++  );
++}
++
++function Results({ r, appliedAt, appliedHow, canUndo, onUndo, onApply, onVerify }) {
++  const rows = [
++    ['Return per year', (m) => pct(m.annualPct)],
++    ['Largest drawdown', (m) => pct(m.maxDrawdownPct)],
++    ['Return ÷ drawdown', (m) => m.score.toFixed(2)],
++    ['Trades', (m) => m.trades],
++    ['Win rate', (m) => `${m.winRate}%`],
++  ];
++  const Col = ({ title, sub, cur, rec }) => (
++    <Card className="p-4 sm:p-5">
++      <div className="font-bold text-[17px]">{title}</div>
++      <div className="text-ink2 text-[13px] mb-3">{sub}</div>
++      <table className="w-full text-[15px] num">
++        <thead>
++          <tr className="text-ink2 text-[13px] text-left">
++            <th className="font-semibold py-1"></th>
++            <th className="font-semibold text-right">Current</th>
++            <th className="font-semibold text-right">Recommended</th>
++          </tr>
++        </thead>
++        <tbody>
++          {rows.map(([label, f]) => (
++            <tr key={label} className="border-t hairline">
++              <td className="py-2">{label}</td>
++              <td className="text-right">{f(cur)}</td>
++              <td className="text-right font-semibold">{f(rec)}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++    </Card>
++  );
++  return (
++    <div className="space-y-4 mt-4">
++      <Card className={`p-5 sm:p-6 ring-2 ${r.keepCurrent ? 'ring-sky/40' : 'ring-mint/40'}`}>
++        <div className="text-[20px] font-bold">{r.keepCurrent ? 'Keep your current settings' : `Recommended: ${r.changes.length} change${r.changes.length === 1 ? '' : 's'}`}</div>
++        {r.keepCurrent && r.reason && <div className="text-[16px] mt-1">{r.reason}</div>}
++        <div className="text-ink2 text-[15px] mt-1">
++          {r.years ? `${r.years} years · ${r.stocks} stocks · ` : ''}Tested {r.tested} combinations · tuned on {niceDate(r.periods.train.from)} – {niceDate(r.periods.train.to)} · checked on {niceDate(r.periods.test.from)} – {niceDate(r.periods.test.to)}
++          {r.locked?.length ? ` · kept: ${r.locked.length} locked setting${r.locked.length > 1 ? 's' : ''}` : ''}
++        </div>
++        {!r.keepCurrent && (
++          <div className="mt-4 space-y-2">
++            {r.changes.map((c) => (
++              <div key={c.key} className="flex flex-wrap items-center justify-between gap-2 bg-card2 rounded-2xl px-4 py-2.5">
++                <span className="font-semibold">{c.label}</span>
++                <span className="num">
++                  <span className="text-ink2">{fmtVal(c.key, c.from)}</span> → <b className="text-mint">{fmtVal(c.key, c.to)}</b>
++                </span>
++              </div>
++            ))}
++          </div>
++        )}
++        <div className="flex flex-wrap gap-3 mt-5">
++          {!r.keepCurrent &&
++            (appliedAt ? (
++              <>
++                <Pill tone="mint" icon={Check}>
++                  {appliedHow === 'auto' ? 'Applied automatically' : 'Applied'} {new Date(appliedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
++                </Pill>
++                {canUndo && (
++                  <Button tone="soft" icon={Undo2} onClick={onUndo}>
++                    Undo — restore my old settings
++                  </Button>
++                )}
++              </>
++            ) : (
++              <Button tone="mint" icon={Check} onClick={onApply}>
++                Apply these settings
++              </Button>
++            ))}
++          {!r.keepCurrent && onVerify && (
++            <Button tone="soft" onClick={() => onVerify(r.recommended.patch)}>
++              Double-check on 15-minute candles
++            </Button>
++          )}
++        </div>
++      </Card>
++      <div className="grid gap-4 lg:grid-cols-2">
++        <Col title="Tuning period" sub="the older 70% of history" cur={r.current.train} rec={r.recommended.train} />
++        <Col title="Unseen test period" sub="the most recent 30% — the honest check" cur={r.current.test} rec={r.recommended.test} />
++      </div>
++      <Card className="p-5 sm:p-6">
++        <h3 className="text-[19px] font-bold">Recommended settings over the whole period</h3>
++        <p className="text-ink2 text-[14px] mb-3">
++          {pct(r.recommended.full.stats.totalReturnPct)} total · largest drawdown {pct(r.recommended.full.stats.maxDrawdownPct)} · {r.recommended.full.stats.trades} trades (your current settings:{' '}
++          {pct(r.current.full.stats.totalReturnPct)}, drawdown {pct(r.current.full.stats.maxDrawdownPct)})
++        </p>
++        <EquityChart data={r.recommended.full.equity} startValue={r.recommended.full.equity[0]?.equity} />
++        {r.recommended.full.stats.cagrPct != null && (
++          <p className="text-[15px] mt-3">
++            <b>{r.recommended.full.stats.cagrPct}% a year</b> on average
++            {r.recommended.full.monteCarlo?.runs ? (
++              <>
++                {' '}
++                · luck check: a bad stretch could mean a drawdown of about <b className="text-coral">−{r.recommended.full.monteCarlo.maxDrawdownPct.p95}%</b>, and a {r.recommended.full.monteCarlo.lossChancePct}% chance the same trades in a different order lose money
++              </>
++            ) : null}
++            {r.recommended.full.periods?.verdict ? <span className="block text-ink2 text-[14px] mt-1">{r.recommended.full.periods.verdict}</span> : null}
++          </p>
++        )}
++      </Card>
++      <p className="text-ink3 text-[14px] px-1">
++        If the recommended settings do much better in the tuning period but not in the unseen test period, they are probably fitted to the past — trust the test period more. Past results
++        do not guarantee future returns.
++      </p>
++    </div>
++  );
++}
+diff --git a/pivot/web/pages/Backtest.jsx b/pivot/web/pages/Backtest.jsx
+index d2926ee..330b136 100644
+--- a/pivot/web/pages/Backtest.jsx
++++ b/pivot/web/pages/Backtest.jsx
+@@ -3,6 +3,7 @@ import { FlaskConical, Play, Download } from 'lucide-react';
+ import { api, useApi, price, pct, signed, tone, niceDate } from '../lib.js';
+ import { Card, LargeTitle, Button, NumberField, Segmented, Row, List, Spinner, Empty, GradeBadge, Pill } from '../components/ui.jsx';
+ import { StatsBlock } from '../components/Charts.jsx';
++import Optimizer from '../components/Optimizer.jsx';
+ 
+ export default function Backtest() {
+   const settings = useApi('/settings');
+@@ -32,6 +33,17 @@ export default function Backtest() {
+     return () => clearInterval(t);
+   }, [job?.id, job?.status]);
+ 
++  // Run a 15-minute backtest with the optimiser's recommended settings (without saving them)
++  const verify = async (patch) => {
++    setErr('');
++    try {
++      const r = await api('/backtest', { method: 'POST', body: { precision: '15m', marketFilter: patch.marketFilter, rules: patch.rules } });
++      setJob({ id: r.id, status: 'running', progress: 0 });
++      window.scrollTo({ top: 0, behavior: 'smooth' });
++    } catch (e) {
++      setErr(e.message);
++    }
++  };
+   const run = async () => {
+     setErr('');
+     try {
+@@ -54,8 +66,8 @@ export default function Backtest() {
+   };
+   const history = async () => {
+     try {
+-      await api('/agents/history', { method: 'POST', body: { years: 5 } });
+-      setErr('Downloading 5 years of daily data in the background (a few minutes). Watch the Agents page for progress.');
++      await api('/agents/history', { method: 'POST', body: { years: 11 } });
++      setErr('Downloading 10 years (+1 for warm-up) of daily data in the background (a few minutes). Watch the Agents page for progress.');
+     } catch (e) {
+       setErr(e.message);
+     }
+@@ -142,7 +154,7 @@ export default function Backtest() {
+               Run backtest
+             </Button>
+             <Button icon={Download} tone="soft" onClick={history} size="lg">
+-              Get 5 years of data
++              Get 10 years of data
+             </Button>
+           </div>
+         </List>
+@@ -164,6 +176,7 @@ export default function Backtest() {
+       )}
+       {job?.status === 'error' && <Card className="p-5 text-coral font-semibold">{job.error}</Card>}
+       {result ? <Results r={result} /> : job?.status !== 'running' && <Card><Empty icon={FlaskConical} title="No backtest yet" text="Run one to see how the rules would have performed." /></Card>}
++      <Optimizer onVerify={verify} />
+     </div>
+   );
+ }
+-- 
+2.43.0
+
