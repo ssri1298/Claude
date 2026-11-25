@@ -3,6 +3,7 @@ import { Crown, Radar, Sparkles, ShieldCheck, Pause, Play, RefreshCw } from 'luc
 import { api, useApi } from '../lib.js';
 import { Card, LargeTitle, Segmented, Spinner, Button, Section } from '../components/ui.jsx';
 import { EventRow } from './Today.jsx';
+import AgentPulse from '../components/AgentPulse.jsx';
 
 const SCHEDULE = [
   ['08:00', 'Parent', 'Checks the Zerodha login — sends you a one-tap login link on Telegram if needed', Crown],
@@ -20,7 +21,7 @@ const TONE = { Parent: 'bg-lav-soft text-lav', Screener: 'bg-sky-soft text-sky',
 
 export default function Agents() {
   const [agent, setAgent] = useState('all');
-  const ov = useApi('/overview', { interval: 5000 });
+  const ov = useApi('/overview', { interval: 5000, events: ['event'] });
   const [events, setEvents] = useState(null);
   const [busy, setBusy] = useState('');
   const load = () => api(`/events${agent === 'all' ? '' : `?agent=${agent}`}`).then(setEvents);
@@ -67,23 +68,7 @@ export default function Agents() {
           </div>
         }
       />
-      {ov.data && (
-        <div className="grid sm:grid-cols-2 gap-4">
-          {ov.data.agents.map((a) => (
-            <Card key={a.key} className="p-5">
-              <div className="flex items-center gap-3">
-                <span className={`h-12 w-12 rounded-2xl flex items-center justify-center ${TONE[a.name]}`}>{{ parent: <Crown />, screener: <Radar />, analyst: <Sparkles />, executor: <ShieldCheck /> }[a.key]}</span>
-                <div>
-                  <div className="text-[20px] font-bold">{a.name}</div>
-                  <div className="text-ink2 text-[14px]">{a.role}</div>
-                </div>
-              </div>
-              <div className="mt-3 text-[16px]">{a.detail}</div>
-              {a.last && <div className="mt-2 text-ink2 text-[14px] line-clamp-2">Last: {a.last.message}</div>}
-            </Card>
-          ))}
-        </div>
-      )}
+      <AgentPulse last={Object.fromEntries((ov.data?.agents || []).map((a) => [a.key, a.last?.message]))} />
 
       <Section title="Daily routine" subtitle="Runs automatically on every trading day (IST)">
         <Card className="p-2 sm:p-3">

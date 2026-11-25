@@ -74,6 +74,7 @@ export class Analyst {
     }
     out.sort((x, y) => y.score - x.score);
     this.status.lastRank = clock.now().toISOString();
+    this.status.lastRankReal = Date.now();
     this.status.ranked += out.length;
     return out;
   }

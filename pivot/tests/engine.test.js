@@ -237,3 +237,12 @@ test('backtest time exit uses the chosen number of days', () => {
     assert.equal(r.params.rules.timeExit.days, days);
   }
 });
+
+test('agents panel: next scheduled job', async () => {
+  const { nextJob } = await import('../server/core/pulse.js');
+  const settings = { schedule: { login: '08:00', prep: '08:30', closeCheck: '15:20', post: '15:40' }, rules: { twoStage: { enabled: true, addTime: '15:15' } } };
+  assert.deepEqual(nextJob(settings, { minutes: 7 * 60 }, 'pre-market'), { at: '08:00', label: 'Login check' });
+  assert.deepEqual(nextJob(settings, { minutes: 11 * 60 }, 'market'), { at: '15:15', label: 'Second-half buys' });
+  assert.equal(nextJob(settings, { minutes: 17 * 60 }, 'post-market').label, 'Morning scan tomorrow');
+  assert.equal(nextJob(settings, { minutes: 11 * 60 }, 'holiday'), null);
+});

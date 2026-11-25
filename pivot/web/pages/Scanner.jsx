@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Search, Radar, Eye } from 'lucide-react';
 import { useApi, go, price, niceDate } from '../lib.js';
 import { Card, LargeTitle, Segmented, GradeBadge, Spinner, Empty, Contractions, StageBadge, Delta, Pill, LivePrice } from '../components/ui.jsx';
+import { ScanStatus } from '../components/AgentPulse.jsx';
 
 export default function Scanner({ query }) {
   const [filter, setFilter] = useState(query.filter || 'setups');
@@ -13,6 +14,7 @@ export default function Scanner({ query }) {
   return (
     <div>
       <LargeTitle title="Scanner" subtitle={data ? `Nifty 500 · ${data.total} stocks · data ${data.asOf || '—'}` : 'Nifty 500'} />
+      <ScanStatus />
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center mb-5">
         <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
           <Segmented

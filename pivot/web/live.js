@@ -1,8 +1,9 @@
-// Live prices in the browser: one snapshot on load, then second-by-second updates over the stream.
+// Live prices in the browser: one snapshot on load, then updates every 2–3 seconds over the stream,
+// plus each agent's live status (what it is doing right now).
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './lib.js';
 
-const state = { index: null, q: {}, phase: null, t: 0 };
+const state = { index: null, q: {}, phase: null, t: 0, agents: null, skew: 0, beat: 0 };
 const subs = new Set();
 const emit = () => subs.forEach((f) => f());
 let started = false;
@@ -17,6 +18,8 @@ export function startLive() {
         state.q = d.q;
         state.phase = d.phase;
         state.t = d.t;
+        if (d.agents) state.agents = d.agents;
+        state.skew = Date.now() - d.t;
         emit();
       })
       .catch(() => {});
@@ -29,6 +32,9 @@ export function startLive() {
     if (d.phase) state.phase = d.phase;
     state.q = { ...state.q, ...d.q };
     state.t = d.t;
+    if (d.agents) state.agents = d.agents;
+    state.skew = Date.now() - d.t; // server clock → browser clock
+    state.beat++;
     emit();
   });
 }
@@ -67,4 +73,38 @@ export function useFlash(value) {
     return () => clearTimeout(t);
   }, [value]);
   return dir;
+}
+
+/** Each agent's live status: { parent, screener, analyst, executor, feed }. */
+export function useAgents() {
+  return useSyncExternalStore(subscribe, () => state.agents);
+}
+
+/** Increments on every push from the server — for a heartbeat blink. */
+export function useBeat() {
+  return useSyncExternalStore(subscribe, () => state.beat);
+}
+
+/** Server timestamp (ms) → browser timestamp, so "3s ago" is right even if clocks differ. */
+export const toLocal = (ms) => (ms == null ? null : ms + state.skew);
+
+/** Re-renders every `ms` milliseconds; returns Date.now(). */
+export function useNow(ms = 1000) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(id);
+  }, [ms]);
+  return now;
+}
+
+/** "just now", "12s ago", "3m ago" */
+export function ago(ms, now = Date.now()) {
+  if (!ms) return '';
+  const s = Math.max(0, Math.round((now - ms) / 1000));
+  if (s < 3) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.round(m / 60)}h ago`;
 }

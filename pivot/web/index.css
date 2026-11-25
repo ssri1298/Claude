@@ -147,3 +147,46 @@ input[type='number']::-webkit-inner-spin-button { opacity: 0.4; }
 .flash-down { animation: flash-down 0.8s ease-out; }
 @keyframes flash-up { 0% { background: rgb(var(--mint) / 0.28); } 100% { background: transparent; } }
 @keyframes flash-down { 0% { background: rgb(var(--coral) / 0.28); } 100% { background: transparent; } }
+
+/* ---------- Agents at work ---------- */
+@keyframes spin360 { to { transform: rotate(360deg); } }
+.agent-sweep::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background: conic-gradient(from 0deg, transparent 0 62%, currentColor 100%);
+  animation: spin360 1.8s linear infinite;
+}
+.radar-spin { animation: spin360 3s linear infinite; }
+@keyframes breathe { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.9); opacity: 0.7; } }
+.breathe { animation: breathe 2.4s ease-in-out infinite; }
+
+.typing-dots { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; }
+.typing-dots span { width: 4px; height: 4px; border-radius: 9999px; background: currentColor; opacity: 0.25; animation: dot-bounce 1.2s infinite ease-in-out; }
+.typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes dot-bounce { 0%, 70%, 100% { opacity: 0.25; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-3px); } }
+
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 35%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, currentColor, transparent);
+  animation: shimmer 1.7s ease-in-out infinite;
+}
+@keyframes shimmer { from { transform: translateX(-110%); } to { transform: translateX(300%); } }
+
+@keyframes fade-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.fade-in { animation: fade-in 0.45s ease-out both; }
+
+@keyframes beat { 0% { transform: scale(1.9); box-shadow: 0 0 0 4px rgb(var(--mint) / 0.25); } 100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; } }
+.beat { animation: beat 0.6s ease-out; }
+
+@keyframes dot-wave { 0%, 100% { transform: translateY(0); opacity: 1; } 50% { transform: translateY(-3px); opacity: 0.55; } }
+.dot-wave { animation: dot-wave 1.1s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-sweep::before, .radar-spin, .breathe, .typing-dots span, .shimmer::after, .fade-in, .beat, .dot-wave, .rise, .pulse-dot { animation: none !important; }
+}

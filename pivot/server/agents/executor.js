@@ -505,6 +505,7 @@ export class Executor {
     const { db, settings } = this.ctx;
     const rules = settings.rules;
     const all = db.all("SELECT * FROM positions WHERE status = 'open'");
+    this.status.lastCheck = Date.now();
     for (const row of all) {
       if (this.busy.has(row.id)) continue;
       const a = this.ctx.analysis?.get(row.symbol);

@@ -3,9 +3,8 @@ import { Crown, Radar, Sparkles, ShieldCheck, Check, X, KeyRound, Pause, Play, F
 import { api, useApi, go, inr, price, pct, signed, tone, istTime, compactInr } from '../lib.js';
 import { Card, Section, Pill, GradeBadge, Button, Spinner, Empty, RiskBar, Segmented, Contractions, StageBadge, Delta , LivePrice } from '../components/ui.jsx';
 import { useQuote, useFlash } from '../live.js';
+import AgentPulse from '../components/AgentPulse.jsx';
 
-const AGENT_ICON = { parent: Crown, screener: Radar, analyst: Sparkles, executor: ShieldCheck };
-const AGENT_CLS = { parent: 'bg-lav-soft text-lav', screener: 'bg-sky-soft text-sky', analyst: 'bg-peach-soft text-peach', executor: 'bg-mint-soft text-mint' };
 
 export default function Today() {
   const { data, error, reload } = useApi('/overview', { interval: 4000, events: ['approval', 'positions', 'scan', 'kite', 'event'] });
@@ -105,29 +104,9 @@ export default function Today() {
         </Card>
       </div>
 
-      {/* Agents */}
+      {/* Agents — live */}
       <Section title="Your agents" action={<button onClick={() => go('/agents')} className="text-accent font-semibold text-[16px]">Activity</button>}>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          {d.agents.map((a) => {
-            const Icon = AGENT_ICON[a.key];
-            const active = ['market', 'scanning', 'working', 'managing', 'waiting', 'ready', 'pre-market'].includes(a.state);
-            return (
-              <Card key={a.key} className="p-4 sm:p-5" onClick={() => go('/agents')}>
-                <div className="flex items-center justify-between">
-                  <span className={`h-11 w-11 rounded-2xl flex items-center justify-center ${AGENT_CLS[a.key]}`}>
-                    <Icon size={22} />
-                  </span>
-                  <span className={`flex items-center gap-1.5 text-[13px] font-semibold capitalize ${active ? 'text-mint' : 'text-ink3'}`}>
-                    <span className={`h-2.5 w-2.5 rounded-full ${active ? 'bg-mint pulse-dot' : 'bg-ink3/60'}`} />
-                    {a.state.replace('-', ' ')}
-                  </span>
-                </div>
-                <div className="mt-3 text-[18px] font-bold">{a.name}</div>
-                <div className="text-ink2 text-[14px] leading-snug mt-0.5 line-clamp-2">{a.detail}</div>
-              </Card>
-            );
-          })}
-        </div>
+        <AgentPulse />
       </Section>
 
       {/* Positions */}
@@ -354,7 +333,7 @@ function Mini({ label, value, sub, tone = '' }) {
 }
 
 export function PositionCard({ p: base, actions }) {
-  // Re-price the position every second from the live Kite stream
+  // Re-price the position every few seconds from the live Kite stream
   const q = useQuote(base.symbol);
   const p = q && base.status !== 'closed' ? { ...base, ltp: q.ltp, pnlPct: (q.ltp / base.entryPrice - 1) * 100, totalPnl: base.realized + base.qtyOpen * (q.ltp - base.entryPrice) } : base;
   const dir = useFlash(p.ltp);
@@ -423,7 +402,7 @@ const AGENT_BG = { Parent: 'bg-lav-soft text-lav', Screener: 'bg-sky-soft text-s
 export function EventRow({ e }) {
   const Icon = { Parent: Crown, Screener: Radar, Analyst: Sparkles, Executor: ShieldCheck }[e.agent] || Activity;
   return (
-    <div className="flex gap-3 px-4 sm:px-5 py-3.5">
+    <div className="flex gap-3 px-4 sm:px-5 py-3.5 rise">
       <span className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${AGENT_BG[e.agent] || 'bg-card2'}`}>
         <Icon size={18} />
       </span>

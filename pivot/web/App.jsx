@@ -3,6 +3,7 @@ import { Sun, Radar, Briefcase, BarChart3, FlaskConical, Bot, Settings as Settin
 import { api, useRoute, go, connectStream, disconnectStream, price } from './lib.js';
 import { startLive, useIndex, usePhase, useFlash } from './live.js';
 import { Spinner } from './components/ui.jsx';
+import { AgentDots } from './components/AgentPulse.jsx';
 import Login from './pages/Login.jsx';
 import Today from './pages/Today.jsx';
 import Scanner from './pages/Scanner.jsx';
@@ -141,26 +142,29 @@ function NiftyBar() {
   const [label, dot] = PHASE[phase] || ['', 'bg-ink3 text-ink3'];
   return (
     <div className="sticky top-0 z-30 glass border-b hairline pt-[env(safe-area-inset-top)]">
-      <div className="mx-auto max-w-[1180px] px-4 sm:px-6 lg:px-10 h-12 flex items-center gap-3">
-        <span className="font-bold text-[15px] tracking-wide">NIFTY 50</span>
+      <div className="mx-auto max-w-[1180px] px-4 sm:px-6 lg:px-10 h-12 flex items-center gap-2 sm:gap-3">
+        <span className="font-bold text-[15px] tracking-wide whitespace-nowrap">NIFTY 50</span>
         {ix ? (
           <>
             <span className={`num font-bold text-[18px] rounded-md px-1 ${dir === 'up' ? 'flash-up' : dir === 'down' ? 'flash-down' : ''}`}>{price(ix.ltp).replace('₹', '')}</span>
-            <span className={`num font-semibold text-[15px] ${up ? 'text-mint' : 'text-coral'}`}>
-              {up ? '▲' : '▼'} <span className="hidden min-[380px]:inline">{Math.abs(ix.change).toFixed(2)} (</span>
+            <span className={`num font-semibold text-[15px] whitespace-nowrap ${up ? 'text-mint' : 'text-coral'}`}>
+              {up ? '▲' : '▼'} <span className="hidden sm:inline">{Math.abs(ix.change).toFixed(2)} (</span>
               {up ? '+' : '−'}
-              {Math.abs(ix.changePct).toFixed(2)}%<span className="hidden min-[380px]:inline">)</span>
+              {Math.abs(ix.changePct).toFixed(2)}%<span className="hidden sm:inline">)</span>
             </span>
           </>
         ) : (
           <span className="text-ink3 text-[15px]">waiting for Kite…</span>
         )}
-        {label && (
-          <span className="ml-auto flex items-center gap-1.5 text-[13px] font-semibold text-ink2 whitespace-nowrap">
-            <span className={`h-2 w-2 rounded-full ${dot}`} />
-            <span className="hidden min-[400px]:inline">{label}</span>
-          </span>
-        )}
+        <span className="ml-auto flex items-center gap-2 sm:gap-2.5 shrink-0">
+          <AgentDots />
+          {label && (
+            <span className="flex items-center gap-1.5 text-[13px] font-semibold text-ink2 whitespace-nowrap">
+              <span className={`h-2 w-2 rounded-full ${dot}`} />
+              <span className="hidden sm:inline">{label}</span>
+            </span>
+          )}
+        </span>
       </div>
     </div>
   );

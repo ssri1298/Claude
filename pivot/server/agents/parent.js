@@ -53,6 +53,7 @@ export class Parent {
   async tick() {
     if (this.running) return;
     this.running = true;
+    this.lastBeat = Date.now();
     try {
       await this._tick();
     } catch (e) {

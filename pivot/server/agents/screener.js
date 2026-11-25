@@ -435,6 +435,7 @@ export class Screener {
     }
 
     this.status.lastScan = clock.now().toISOString();
+    this.status.lastScanReal = Date.now();
     this.status.live = { breakingOut, near, scanned: live.size };
     return signals;
   }

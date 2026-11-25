@@ -9,6 +9,7 @@ import { rMultiple } from './engine/rules.js';
 import { round } from './engine/vcp.js';
 import { NIFTY50_TOKEN, parseNifty500Csv } from './broker/feeds.js';
 import { indexSnapshot, stockSnapshot } from './core/quotes.js';
+import { agentPulse } from './core/pulse.js';
 import { CHECK_LABELS } from './engine/confirm.js';
 import { syncHolidays } from './core/holidays.js';
 import { createUpdater } from './core/updater.js';
@@ -234,7 +235,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
   );
   app.get(
     '/api/quotes',
-    wrap(() => ({ t: Date.now(), index: indexSnapshot(ctx), q: stockSnapshot(ctx), phase: ctx.parent.phase, demo: ctx.demo })),
+    wrap(() => ({ t: Date.now(), index: indexSnapshot(ctx), q: stockSnapshot(ctx), phase: ctx.parent.phase, demo: ctx.demo, agents: agentPulse(ctx) })),
   );
   app.get(
     '/api/stock/:symbol/scores',
