@@ -3,6 +3,7 @@ import { Briefcase, Ghost, History } from 'lucide-react';
 import { api, useApi, go, price, pct, signed, tone, inr, niceDate, istDateTime } from '../lib.js';
 import { Card, LargeTitle, Segmented, Spinner, Empty, Button, Sheet, Pill, GradeBadge, NumberField } from '../components/ui.jsx';
 import { PositionCard } from './Today.jsx';
+import { JournalSheet, JournalButton } from '../components/Journal.jsx';
 
 export default function Trades({ query }) {
   const [tab, setTab] = useState(query.tab || 'open');
@@ -27,7 +28,7 @@ export default function Trades({ query }) {
         ]}
       />
       {tab === 'open' && <OpenList rows={open.data} reload={open.reload} />}
-      {tab === 'closed' && <ClosedList rows={closed.data} />}
+      {tab === 'closed' && <ClosedList rows={closed.data} reload={closed.reload} />}
       {status === 'all' && (
         <>
           <p className="text-ink2 text-[16px] mb-4 px-1">
@@ -46,6 +47,7 @@ export default function Trades({ query }) {
 function OpenList({ rows, reload }) {
   const [stopFor, setStopFor] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [journal, setJournal] = useState(null);
   if (!rows) return <Spinner />;
   if (!rows.length) return <Card><Empty icon={Briefcase} title="No open positions" text="Approved breakouts appear here with their stop, profit target and trailing status." /></Card>;
   return (
@@ -81,7 +83,13 @@ function OpenList({ rows, reload }) {
                   <Button size="sm" tone="coralSoft" onClick={() => setConfirm({ p, fraction: 1 })}>
                     Sell all
                   </Button>
+                  <JournalButton p={p} onOpen={setJournal} />
                 </div>
+                {p.powerHold && (
+                  <div className="mt-2">
+                    <Pill tone="mint">💪 8-week hold — no trailing exit</Pill>
+                  </div>
+                )}
                 {p.gtt && (
                   <div className="mt-2">
                     <Pill tone="mint">Backup GTT ✓</Pill>
@@ -94,6 +102,7 @@ function OpenList({ rows, reload }) {
       </div>
       <StopSheet p={stopFor} onClose={() => setStopFor(null)} onDone={reload} />
       <ConfirmSell c={confirm} onClose={() => setConfirm(null)} onDone={reload} />
+      <JournalSheet position={journal} onClose={() => setJournal(null)} onChanged={reload} />
     </>
   );
 }
@@ -179,8 +188,9 @@ export function ConfirmSell({ c, onClose, onDone }) {
 
 const REASON = { stop: 'Stop-loss', trail: 'Trailing exit', manual: 'You sold', outside: 'Outside Pivot', partial: 'Partial', failed: 'Failed breakout', time: 'Time exit', climax: 'Climax sale' };
 
-function ClosedList({ rows }) {
+function ClosedList({ rows, reload }) {
   const [open, setOpen] = useState(null);
+  const [journal, setJournal] = useState(null);
   if (!rows) return <Spinner />;
   if (!rows.length) return <Card><Empty icon={History} title="No closed trades yet" /></Card>;
   return (
@@ -195,6 +205,7 @@ function ClosedList({ rows }) {
                 <div className="font-bold text-[18px]">{p.symbol}</div>
                 <div className="text-ink2 text-[14px]">
                   {niceDate(p.entryDate)} → {niceDate(p.exitDate)} · {p.holdDays}d · {p.exitReason === 'stop' && p.partialDone ? 'Breakeven stop' : REASON[p.exitReason] || p.exitReason}
+                  {p.journalCount > 0 && <span className="text-lav font-semibold"> · 📝 {p.journalCount}</span>}
                 </div>
               </div>
               <div className="text-right">
@@ -226,9 +237,20 @@ function ClosedList({ rows }) {
               <span className="font-semibold">Net result</span>
               <b className={`num ${tone(open.realized)}`}>{signed(open.realized)}</b>
             </div>
+            <div className="pt-3">
+              <JournalButton
+                p={open}
+                size="md"
+                onOpen={(p) => {
+                  setOpen(null);
+                  setJournal(p);
+                }}
+              />
+            </div>
           </div>
         )}
       </Sheet>
+      <JournalSheet position={journal} onClose={() => setJournal(null)} onChanged={reload} />
     </>
   );
 }

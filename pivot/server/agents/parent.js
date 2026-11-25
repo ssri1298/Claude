@@ -10,10 +10,11 @@
 import { Screener } from './screener.js';
 import { Analyst } from './analyst.js';
 import { Executor } from './executor.js';
-import { ist, toMinutes, MARKET, isTradingDay, hhmm } from '../core/time.js';
+import { ist, toMinutes, MARKET, isTradingDay, hhmm, nextTradingDay } from '../core/time.js';
 import { round } from '../engine/vcp.js';
 import { esc } from '../notify/telegram.js';
-import { buildMorning, buildEvening, saveReport, morningText, eveningText } from './reports.js';
+import { buildMorning, buildEvening, saveReport, morningText, eveningText, buildPeriodReport, periodText } from './reports.js';
+import { periodEnds } from '../core/watchdog.js';
 
 const NAME = 'Parent';
 const inr = (x) => '₹' + Math.round(Number(x)).toLocaleString('en-IN');
@@ -152,6 +153,8 @@ export class Parent {
         await this.screener.prepare({ reason: 'after close' });
         await this.executor.snapshotEquity();
         await this.eveningReport();
+        await this.periodReports(t.date);
+        if (settings.backup?.daily !== false && this.ctx.watchdog) await this.ctx.watchdog.backup({ send: !!settings.backup?.telegram }).catch((e) => this.log(`Backup failed: ${e.message}`, 'warn'));
       })()
         .then(() => (day.jobs.post = 'done'))
         .catch(() => {
@@ -172,6 +175,18 @@ export class Parent {
       this.log('No live prices received 30 minutes after the open — is today a market holiday? Add it in Settings → Market holidays if so.', 'warn');
     }
     this.ctx.bus.push('scan', { at: t.hhmm, ...this.screener.status.live });
+  }
+
+  /** On the last trading day of a week / month: send the weekly / monthly summary. */
+  async periodReports(date) {
+    const next = nextTradingDay(date, this.ctx.settings.holidays);
+    const ends = periodEnds(date, next);
+    for (const type of ['week', 'month']) {
+      if (!ends[type]) continue;
+      const r = buildPeriodReport(this.ctx, type, date);
+      this.ctx.notify?.('weeklyReport', periodText(r), this.ctx.publicUrl ? [[{ text: 'Open full report', url: `${this.ctx.publicUrl}/#/reports?period=${type}` }]] : undefined);
+      this.log(`${type === 'week' ? 'Weekly' : 'Monthly'} report sent — ${r.closed.length} trades closed, ${r.change != null ? (r.change >= 0 ? '+' : '') + Math.round(r.change).toLocaleString('en-IN') : '—'} for the ${type}`);
+    }
   }
 
   remindLogin() {

@@ -239,6 +239,9 @@ export default function Settings({ query, section }) {
           ['exits', 'Stops, partial profits & exits'],
           ['morningBrief', 'Morning brief'],
           ['eveningReport', 'Evening report'],
+          ['weeklyReport', 'Weekly & monthly report'],
+          ['health', 'Problems with Pivot (price feed, morning analysis)'],
+          ['alerts', 'My price alerts'],
           ['nearPivot', 'Stock within 1% of pivot'],
         ].map(([k, l]) => (
           <Row key={k} icon={k === 'proposals' ? Bell : undefined} iconTone="peach" title={l} right={<Toggle checked={s.notify[k] !== false} onChange={(v) => save({ notify: { [k]: v } })} />} />
@@ -274,6 +277,7 @@ export default function Settings({ query, section }) {
             <Row icon={Palette} iconTone="rose" title="Theme" right={<ThemePicker />} />
           </Group>
           <AppUpdates />
+          <WatchdogGroup s={s} save={save} />
       <Group title="Data">
         <Row icon={Database} iconTone="sky" title="Stocks tracked" subtitle={`Nifty 500 list · history from ${data.historyFrom || '—'}`} right={<b className="num">{data.universeCount}</b>} />
         {!data.demo && <UploadNifty500 />}
@@ -404,6 +408,64 @@ function ErasePaper() {
           </>
         )}
       </Sheet>
+    </>
+  );
+}
+
+/** Outside heartbeat (healthchecks.io), health notifications and daily backups. */
+function WatchdogGroup({ s, save }) {
+  const { data, reload } = useApi('/watchdog');
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState('');
+  const [msg, setMsg] = useState('');
+  const run = async (key, fn) => {
+    setBusy(key);
+    setMsg('');
+    try {
+      await fn();
+      await reload();
+    } catch (e) {
+      setMsg(e.message);
+    } finally {
+      setBusy('');
+    }
+  };
+  const hb = data?.heartbeat;
+  const lb = data?.lastBackup;
+  return (
+    <>
+      <Group
+        title="Watchdog"
+        footer="If the server crashes, nothing inside it can warn you — so Pivot checks in with a free outside service every minute. Create a free account at healthchecks.io → New check (period 1 minute, grace 3 minutes) → copy its ping URL here. If the check-ins stop, or Pivot reports a problem, healthchecks.io alerts your email or phone. Inside Pivot, problems in market hours (price stream down, morning analysis not done) also send a notification."
+      >
+        <Row icon={ShieldCheck} iconTone="mint" title="Health right now" subtitle={data?.problem ? data.problem : 'Everything is working'} right={data?.problem ? <Pill tone="coral">Problem</Pill> : <Pill tone="mint">OK</Pill>} />
+        <Row title="Outside check-in URL" subtitle={hb?.configured ? (hb.lastPing ? `Last check-in ${new Date(hb.lastPing).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} — ${hb.ok ? 'received' : 'failed: ' + (hb.error || '')}` : 'Saved — first check-in within a minute') : 'Not set up'}>
+          <div className="flex gap-2 mt-2">
+            <TextField value={url} onChange={setUrl} placeholder={hb?.configured ? 'Saved ✓ — paste a new URL to change' : 'https://hc-ping.com/…'} />
+            <Button size="sm" loading={busy === 'url'} disabled={!url.trim()} onClick={() => run('url', async () => (await api('/secrets', { method: 'PUT', body: { heartbeatUrl: url.trim() } }), setUrl(''), await api('/watchdog/test', { method: 'POST' })))}>
+              Save
+            </Button>
+          </div>
+        </Row>
+      </Group>
+      <Group title="Backups" footer="Every evening Pivot saves a full copy on the server (last 7 kept) and a small copy of your trades, journal, reports and settings — no market data and no passwords. Send that small copy to your Telegram, or download it, so a server failure can't lose your history.">
+        <Row icon={Database} iconTone="sky" title="Daily backup" subtitle={lb ? `Last: ${new Date(lb.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · ${Math.round((lb.smallSize || 0) / 1024)} KB` : 'No backup yet'} right={<Toggle checked={s.backup?.daily !== false} onChange={(v) => save({ backup: { daily: v } })} />} />
+        <Row title="Send it to my Telegram" subtitle={data?.telegram ? 'The small copy arrives as a file every evening' : 'Connect Telegram first (Settings → Notifications)'} right={<Toggle checked={!!s.backup?.telegram} disabled={!data?.telegram} onChange={(v) => save({ backup: { telegram: v } })} />} />
+        <Row
+          title="Back up now"
+          subtitle={msg || undefined}
+          right={
+            <div className="flex gap-2">
+              <Button size="sm" tone="soft" loading={busy === 'bk'} onClick={() => run('bk', () => api('/backup', { method: 'POST', body: { send: !!s.backup?.telegram } }))}>
+                Back up
+              </Button>
+              <Button size="sm" tone="soft" disabled={!lb} onClick={() => (window.location.href = '/api/backup/download')}>
+                Download
+              </Button>
+            </div>
+          }
+        />
+      </Group>
     </>
   );
 }

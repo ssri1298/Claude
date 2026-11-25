@@ -451,3 +451,52 @@ test('stock filters: results soon, surveillance, tight band and low turnover blo
   ctx.updateSettings({ rules: { filters: { minTurnoverCr: 0 } } });
   assert.equal(filterBlock(ctx, a, date), null);
 });
+
+test('weekly report, tax statement and journal from real trades', async () => {
+  const { ctx, a, ex, an } = await setup();
+  const { buildPeriodReport, taxRows, taxCsv, periodText } = await import('../server/agents/reports.js');
+  ctx.updateSettings({ confirmTrades: false, rules: { twoStage: { enabled: false } } });
+  quote(ctx, 101);
+  const [s] = an.rank([signal(a, 101)]);
+  await ex.consider(s);
+  await new Promise((r) => setTimeout(r, 20));
+  const pos = ctx.db.get("SELECT * FROM positions WHERE kind = 'paper'");
+  ctx.db.insert('journal', { position_id: pos.id, symbol: 'TEST', ts: new Date().toISOString(), date: '2028-03-15', text: 'Clean breakout', tags: JSON.stringify(['Followed the rules']) });
+  quote(ctx, pos.stop - 1);
+  await tick(ex, {});
+  const w = buildPeriodReport(ctx, 'week', '2028-03-15');
+  assert.equal(w.from, '2028-03-13');
+  assert.equal(w.to, '2028-03-19');
+  assert.equal(w.closed.length, 1);
+  assert.ok(w.stats.booked < 0);
+  assert.equal(w.journal.length, 1);
+  assert.match(periodText(w), /Weekly report/);
+  const rows = taxRows(ctx, '2027', 'paper');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].term, 'STCG');
+  assert.ok(rows[0].gain < 0);
+  assert.match(taxCsv(rows, '2027', 'paper'), /Short-term gains/);
+});
+
+test('watchdog: backups leave secrets out; period ends detected', async () => {
+  const { mkdtempSync, existsSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { DatabaseSync } = await import('node:sqlite');
+  const { createWatchdog, periodEnds } = await import('../server/core/watchdog.js');
+  const { ctx } = await setup();
+  ctx.db.kvSet('secrets', { kiteApiSecret: 'top-secret' });
+  ctx.db.run("INSERT INTO candles(token, date, open, high, low, close, volume) VALUES (1, '2028-03-14', 1, 1, 1, 1, 1)");
+  const dir = mkdtempSync(join(tmpdir(), 'pivot-'));
+  const wd = createWatchdog(ctx, { dataDir: dir });
+  const b = await wd.backup();
+  const small = join(dir, 'backups', b.small);
+  assert.ok(existsSync(small) && existsSync(join(dir, 'backups', b.full)));
+  const sdb = new DatabaseSync(small);
+  assert.equal(sdb.prepare("SELECT COUNT(*) AS n FROM kv WHERE key = 'secrets'").get().n, 0, 'no secrets in the portable copy');
+  assert.equal(sdb.prepare('SELECT COUNT(*) AS n FROM candles').get().n, 0, 'no market data');
+  sdb.close();
+  assert.deepEqual(periodEnds('2028-03-17', '2028-03-20'), { week: true, month: false }); // Fri → Mon
+  assert.deepEqual(periodEnds('2028-03-31', '2028-04-03'), { week: true, month: true });
+  assert.deepEqual(periodEnds('2028-03-15', '2028-03-16'), { week: false, month: false });
+});

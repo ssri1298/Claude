@@ -129,6 +129,25 @@ export class Telegram {
     }
   }
 
+  /** Send a file (e.g. the daily backup). Telegram accepts up to 50 MB. */
+  async sendDocument(path, caption) {
+    if (!this.enabled || !this.chatId) return false;
+    try {
+      const { readFileSync } = await import('node:fs');
+      const form = new FormData();
+      form.append('chat_id', String(this.chatId));
+      if (caption) form.append('caption', caption);
+      form.append('document', new Blob([readFileSync(path)]), path.split('/').pop());
+      const res = await fetch(`https://api.telegram.org/bot${this.token}/sendDocument`, { method: 'POST', body: form, signal: AbortSignal.timeout(60000) });
+      const json = await res.json().catch(() => ({}));
+      if (!json.ok) throw new Error(json.description || `HTTP ${res.status}`);
+      return true;
+    } catch (e) {
+      this.log(`Could not send the backup to Telegram: ${e.message}`, 'warn');
+      return false;
+    }
+  }
+
   async edit(messageId, text) {
     if (!this.enabled || !this.chatId || !messageId) return;
     try {

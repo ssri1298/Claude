@@ -16,7 +16,8 @@ export const DEFAULT_SETTINGS = {
   rules: DEFAULT_RULES,
   holidays: [],
   schedule: { login: '08:00', prep: '08:30', closeCheck: '15:20', post: '15:40' },
-  notify: { login: true, proposals: true, fills: true, exits: true, morningBrief: true, eveningReport: true, nearPivot: false },
+  notify: { login: true, proposals: true, fills: true, exits: true, morningBrief: true, eveningReport: true, weeklyReport: true, health: true, alerts: true, nearPivot: false },
+  backup: { daily: true, telegram: false },
   theme: 'system',
 };
 
@@ -85,5 +86,6 @@ export function maskSecrets(s) {
     kiteUserId: s.kiteUserId || '',
     telegramToken: m(s.telegramToken),
     telegramChatId: s.telegramChatId || '',
+    heartbeatUrl: m(s.heartbeatUrl),
   };
 }

@@ -79,6 +79,15 @@ CREATE TABLE IF NOT EXISTS candles15_ranges (
 );
 CREATE INDEX IF NOT EXISTS c15r_token ON candles15_ranges(token);
 
+CREATE TABLE IF NOT EXISTS journal (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, position_id INTEGER, symbol TEXT, ts TEXT, date TEXT, text TEXT, tags TEXT
+);
+CREATE INDEX IF NOT EXISTS journal_pos ON journal(position_id);
+
+CREATE TABLE IF NOT EXISTS alerts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, token INTEGER, op TEXT, price REAL, note TEXT, created TEXT, triggered TEXT, triggered_price REAL, active INTEGER DEFAULT 1
+);
+
 CREATE TABLE IF NOT EXISTS reports (
   id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, type TEXT, ts TEXT, kind TEXT, data TEXT, UNIQUE(date, type)
 );

@@ -13,6 +13,26 @@ const dayLabel = (d, today) => {
 };
 
 export default function Reports({ query }) {
+  const [mode, setMode] = useState(query.period === 'week' || query.period === 'month' ? query.period : 'day');
+  return (
+    <div className="space-y-6">
+      <LargeTitle title="Reports" subtitle="Daily briefs, weekly and monthly summaries, tax statement" />
+      <Segmented
+        value={mode}
+        onChange={setMode}
+        options={[
+          { value: 'day', label: 'Daily' },
+          { value: 'week', label: 'Weekly' },
+          { value: 'month', label: 'Monthly' },
+        ]}
+      />
+      {mode === 'day' ? <DailyReports query={query} /> : <PeriodReports key={mode} type={mode} />}
+      <TaxCard />
+    </div>
+  );
+}
+
+function DailyReports({ query }) {
   const list = useApi('/reports', { events: ['report'] });
   const [date, setDate] = useState(query.date || null);
   const [type, setType] = useState(query.type || null);
@@ -52,8 +72,6 @@ export default function Reports({ query }) {
 
   return (
     <div className="space-y-6">
-      <LargeTitle title="Reports" subtitle="Morning brief and evening report, every trading day" />
-
       {/* Day picker */}
       <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0 pb-1">
         {[...(hasToday ? [] : [{ date: today }]), ...days].map((d) => {
@@ -403,5 +421,157 @@ function Evening({ r }) {
       <Positions rows={r.positions} title="Holding into tomorrow" />
       <Setups rows={r.tomorrow} title="Setups for tomorrow" subtitle={`Watching ${r.watching} ${r.watching === 1 ? 'setup' : 'setups'} in total`} />
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ weekly / monthly
+function PeriodReports({ type }) {
+  const periods = useApi(`/period-reports?type=${type}`);
+  const [date, setDate] = useState(null);
+  const sel = date || periods.data?.[0]?.date;
+  const { data: r } = useApi(sel ? `/period-report?type=${type}&date=${sel}` : null, { enabled: !!sel, events: ['positions', 'report'] });
+  if (!periods.data) return <Spinner />;
+  return (
+    <div className="space-y-6">
+      <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0 pb-1">
+        {periods.data.map((p, i) => {
+          const on = p.date === sel;
+          return (
+            <button key={p.date} onClick={() => setDate(p.date)} className={`shrink-0 rounded-2xl px-4 py-2.5 text-[15px] font-bold whitespace-nowrap ${on ? 'bg-accent text-white' : 'bg-card shadow-soft'}`}>
+              {i === 0 ? (type === 'week' ? 'This week' : 'This month') : p.label}
+            </button>
+          );
+        })}
+      </div>
+      {!r ? (
+        <Spinner />
+      ) : (
+        <div className="space-y-7">
+          <Card className="p-5 sm:p-6">
+            <div className="text-ink2 text-[15px] font-semibold">
+              {type === 'week' ? 'Week' : 'Month'} · {r.label} · {r.kind === 'paper' ? 'paper account' : 'live account'}
+            </div>
+            <div className="flex flex-wrap items-baseline gap-x-3 mt-1">
+              <span className="text-[36px] font-bold num tracking-tight">{r.endEquity != null ? inr(r.endEquity) : '—'}</span>
+              {r.change != null && (
+                <span className={`num font-semibold text-[18px] ${tone(r.change)}`}>
+                  {signed(r.change)} ({pct(r.changePct, 2)})
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+              <Fig label="Trades closed" value={r.stats.trades} sub={r.stats.trades ? `${r.stats.winRate}% wins · ${r.stats.avgR ?? '—'}R avg` : undefined} />
+              <Fig label="Booked" value={signed(r.stats.booked)} className={tone(r.stats.booked)} />
+              <Fig label="Charges" value={inr(r.stats.charges)} />
+              <Fig label="Breakouts" value={r.signals.total} sub={`${r.signals.bought} bought`} />
+            </div>
+          </Card>
+
+          <Section title="Trades closed">
+            {r.closed.length ? (
+              <Card className="divide-y hairline">
+                {r.closed.map((c, i) => (
+                  <div key={i} className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5">
+                    <div className="min-w-0">
+                      <Sym s={c.symbol} />
+                      <div className="text-ink2 text-[13px]">
+                        {c.reason} · {c.days} {c.days === 1 ? 'day' : 'days'}
+                        {c.r != null ? ` · ${c.r}R` : ''}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className={`num font-semibold ${tone(c.realized)}`}>{signed(c.realized)}</div>
+                      <div className={`num text-[13px] ${tone(c.pct)}`}>{pct(c.pct)}</div>
+                    </div>
+                  </div>
+                ))}
+              </Card>
+            ) : (
+              <Card className="px-5 py-4 text-ink2">No trades closed in this {type}.</Card>
+            )}
+          </Section>
+
+          {Object.keys(r.signals.skipped).length > 0 && (
+            <Section title="Breakouts skipped" subtitle="Why the agents passed">
+              <Card className="divide-y hairline">
+                {Object.entries(r.signals.skipped)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([k, n]) => (
+                    <div key={k} className="flex justify-between px-4 sm:px-5 py-3">
+                      <span className="capitalize">{k.replace(/^skipped_/, '').replace(/_/g, ' ')}</span>
+                      <b className="num">{n}</b>
+                    </div>
+                  ))}
+              </Card>
+            </Section>
+          )}
+
+          <Section title="Journal" subtitle={`Your notes from this ${type}`}>
+            {r.journal.length ? (
+              <Card className="divide-y hairline">
+                {r.journal.map((j, i) => (
+                  <div key={i} className="px-4 sm:px-5 py-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Sym s={j.symbol} />
+                      <span className="text-ink3 text-[13px]">{j.date}</span>
+                      {j.tags.map((t) => (
+                        <span key={t} className="text-[12px] font-semibold rounded-full px-2 py-0.5 bg-lav-soft text-lav">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                    {j.text && <p className="text-[15px] mt-1 whitespace-pre-wrap">{j.text}</p>}
+                  </div>
+                ))}
+              </Card>
+            ) : (
+              <Card className="px-5 py-4 text-ink2">No journal notes. Add them from Trades → Journal.</Card>
+            )}
+          </Section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ tax statement
+function TaxCard() {
+  const now = new Date();
+  const curFy = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  const [fy, setFy] = useState(String(curFy));
+  const [kind, setKind] = useState('live');
+  const { data } = useApi(`/tax?fy=${fy}&kind=${kind}`);
+  const fys = [curFy, curFy - 1, curFy - 2].map(String);
+  return (
+    <Section title="Tax statement" subtitle="Capital gains for your ITR, with all charges">
+      <Card className="p-4 sm:p-5 space-y-4">
+        <div className="flex flex-wrap gap-2">
+          <Segmented size="sm" value={fy} onChange={setFy} options={fys.map((y) => ({ value: y, label: `FY ${y}-${String(Number(y) + 1).slice(2)}` }))} />
+          <Segmented
+            size="sm"
+            value={kind}
+            onChange={setKind}
+            options={[
+              { value: 'live', label: 'Live' },
+              { value: 'paper', label: 'Paper' },
+            ]}
+          />
+        </div>
+        {data && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Fig label="Sales" value={data.sales} />
+            <Fig label="Short-term (STCG)" value={signed(data.stcg)} className={tone(data.stcg)} />
+            <Fig label="Long-term (LTCG)" value={signed(data.ltcg)} className={tone(data.ltcg)} />
+            <Fig label="Charges" value={inr(data.charges)} />
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button icon={FileText} tone="lav" onClick={() => (window.location.href = `/api/tax.csv?fy=${fy}&kind=${kind}`)}>
+            Download CSV
+          </Button>
+          <span className="text-ink3 text-[13px] flex-1 min-w-[200px]">One row per sale: dates, quantity, buy and sell value, charges, gain, short- or long-term. Opens in Excel or Google Sheets. Check it against Zerodha Console's tax P&L before filing.</span>
+        </div>
+      </Card>
+    </Section>
   );
 }

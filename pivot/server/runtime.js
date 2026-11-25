@@ -12,6 +12,8 @@ import { Telegram } from './notify/telegram.js';
 import { Parent } from './agents/parent.js';
 import { startQuotePusher } from './core/quotes.js';
 import { loadFlags } from './core/stockflags.js';
+import { createWatchdog } from './core/watchdog.js';
+import { dirname } from 'node:path';
 import { WebPush, toPlain } from './notify/webpush.js';
 import { IntradayTracker } from './core/intraday.js';
 import { syncHolidays } from './core/holidays.js';
@@ -186,8 +188,13 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
     ctx.feed?.stop?.();
   };
 
+  // ---------- watchdog (heartbeat, health checks) and daily backups
+  const dataDir = dbFile && dbFile !== ':memory:' ? dirname(dbFile) : null;
+  ctx.watchdog = createWatchdog(ctx, { dataDir, log: (m, l) => ctx.bus.log('Parent', m, { level: l }) });
+
   if (autostart) {
     ctx.quoteTimer = startQuotePusher(ctx);
+    ctx.watchdog.start();
     // NSE trading holidays: built-in list now, official NSE list in the background (then weekly)
     syncHolidays(ctx).catch(() => {});
     ctx.holidayTimer = setInterval(() => syncHolidays(ctx).catch(() => {}), 24 * 3600 * 1000);

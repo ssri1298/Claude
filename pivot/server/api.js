@@ -10,7 +10,7 @@ import { round } from './engine/vcp.js';
 import { NIFTY50_TOKEN, parseNifty500Csv } from './broker/feeds.js';
 import { indexSnapshot, stockSnapshot } from './core/quotes.js';
 import { agentPulse } from './core/pulse.js';
-import { buildMorning, buildEvening, saveReport } from './agents/reports.js';
+import { buildMorning, buildEvening, saveReport, buildPeriodReport, periodRange, taxRows, taxCsv } from './agents/reports.js';
 import { stockBadges, filterBlock, refreshFlags } from './core/stockflags.js';
 import { reportCard } from './engine/reportcard.js';
 import { pruneHolds, setBlocked, setCorrectionBuys, setPositionHold } from './core/overrides.js';
@@ -42,6 +42,8 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
   const updater = ctx.demo || !dataDir ? null : createUpdater({ dataDir, getToken: () => ctx.secrets.githubToken, log: (m) => ctx.bus.log('Parent', m) });
 
   // ------------------------------------------------------------ auth (public)
+  // Public, minimal: for outside uptime monitors (no private data)
+  app.get('/api/health', (req, res) => res.json({ ok: true, phase: ctx.parent?.phase || 'starting', problem: !!ctx.watchdog?.state.problem, time: new Date().toISOString() }));
   app.get('/api/auth/status', (req, res) => res.json({ setup: auth.hasPassword(), loggedIn: auth.valid(req), demo: ctx.demo }));
   app.post(
     '/api/auth/setup',
@@ -436,7 +438,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
   app.put(
     '/api/secrets',
     wrap(async (req) => {
-      const allowed = ['kiteApiKey', 'kiteApiSecret', 'telegramToken', 'githubToken'];
+      const allowed = ['kiteApiKey', 'kiteApiSecret', 'telegramToken', 'githubToken', 'heartbeatUrl'];
       const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => allowed.includes(k)));
       ctx.secrets = saveSecrets(db, patch);
       if ('kiteApiKey' in patch || 'kiteApiSecret' in patch) ctx.reconfigureKite();
@@ -644,6 +646,86 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
     }),
   );
 
+  // ------------------------------------------------------------ watchdog & backups
+  app.get('/api/watchdog', wrap(() => ({ ...ctx.watchdog.status(), backupSettings: ctx.settings.backup, telegram: !!ctx.secrets.telegramChatId })));
+  app.post('/api/watchdog/test', wrap(async () => (await ctx.watchdog.check(), ctx.watchdog.status())));
+  app.post('/api/backup', wrap(async (req) => ({ ok: true, backup: await ctx.watchdog.backup({ send: !!req.body?.send }) })));
+  app.get('/api/backup/download', (req, res) => {
+    const b = ctx.watchdog.latestSmall();
+    if (!b) return res.status(404).json({ error: 'No backup yet — tap "Back up now" first' });
+    res.download(b.path, b.name);
+  });
+
+  // ------------------------------------------------------------ weekly / monthly reports & tax statement
+  app.get(
+    '/api/period-report',
+    wrap((req) => {
+      const type = req.query.type === 'month' ? 'month' : 'week';
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '') ? req.query.date : ist(ctx.clock.now()).date;
+      const kind = ['paper', 'live'].includes(req.query.kind) ? req.query.kind : undefined;
+      return buildPeriodReport(ctx, type, date, kind);
+    }),
+  );
+  app.get(
+    '/api/period-reports',
+    wrap((req) => {
+      const type = req.query.type === 'month' ? 'month' : 'week';
+      const out = [];
+      let d = ist(ctx.clock.now()).date;
+      for (let i = 0; i < 12; i++) {
+        const r = periodRange(type, d);
+        out.push({ date: r.from, label: r.label, from: r.from, to: r.to });
+        const prev = new Date(r.from + 'T12:00:00Z');
+        prev.setUTCDate(prev.getUTCDate() - 1);
+        d = prev.toISOString().slice(0, 10);
+      }
+      return out;
+    }),
+  );
+  app.get(
+    '/api/tax',
+    wrap((req) => {
+      const t = ist(ctx.clock.now()).date;
+      const fy = /^\d{4}$/.test(req.query.fy || '') ? req.query.fy : String(Number(t.slice(0, 4)) - (t.slice(5) < '04-01' ? 1 : 0));
+      const kind = req.query.kind === 'paper' ? 'paper' : 'live';
+      const rows = taxRows(ctx, fy, kind);
+      const sum = (f) => Math.round(rows.reduce((s, r) => s + f(r), 0));
+      return { fy, kind, sales: rows.length, stcg: sum((r) => (r.term === 'STCG' ? r.gain : 0)), ltcg: sum((r) => (r.term === 'LTCG' ? r.gain : 0)), charges: sum((r) => r.buyCharges + r.sellCharges) };
+    }),
+  );
+  app.get('/api/tax.csv', (req, res) => {
+    const fy = /^\d{4}$/.test(req.query.fy || '') ? req.query.fy : String(new Date().getFullYear());
+    const kind = req.query.kind === 'paper' ? 'paper' : 'live';
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="pivot-capital-gains-FY${fy}-${String(Number(fy) + 1).slice(2)}${kind === 'paper' ? '-paper' : ''}.csv"`);
+    res.send(taxCsv(taxRows(ctx, fy, kind), fy, kind));
+  });
+
+  // ------------------------------------------------------------ trade journal
+  const journalView = (j) => ({ id: j.id, positionId: j.position_id, symbol: j.symbol, ts: j.ts, date: j.date, text: j.text, tags: JSON.parse(j.tags || '[]') });
+  app.get(
+    '/api/journal',
+    wrap((req) => {
+      if (req.query.positionId) return db.all('SELECT * FROM journal WHERE position_id = ? ORDER BY ts', Number(req.query.positionId)).map(journalView);
+      if (req.query.symbol) return db.all('SELECT * FROM journal WHERE symbol = ? ORDER BY ts DESC', String(req.query.symbol).toUpperCase()).map(journalView);
+      return db.all('SELECT * FROM journal ORDER BY ts DESC LIMIT 200').map(journalView);
+    }),
+  );
+  app.post(
+    '/api/journal',
+    wrap((req) => {
+      const text = String(req.body?.text || '').trim().slice(0, 4000);
+      const tags = Array.isArray(req.body?.tags) ? req.body.tags.map((x) => String(x).slice(0, 40)).slice(0, 10) : [];
+      if (!text && !tags.length) throw Object.assign(new Error('Write a note or pick a tag'), { status: 400 });
+      const pos = req.body.positionId ? db.get('SELECT id, symbol FROM positions WHERE id = ?', Number(req.body.positionId)) : null;
+      const symbol = pos?.symbol || String(req.body.symbol || '').toUpperCase();
+      if (!symbol) throw Object.assign(new Error('Which trade is this note for?'), { status: 400 });
+      const id = db.insert('journal', { position_id: pos?.id || null, symbol, ts: new Date().toISOString(), date: ist(ctx.clock.now()).date, text, tags: JSON.stringify(tags) });
+      return journalView(db.get('SELECT * FROM journal WHERE id = ?', id));
+    }),
+  );
+  app.delete('/api/journal/:id', wrap((req) => (db.run('DELETE FROM journal WHERE id = ?', Number(req.params.id)), { ok: true })));
+
   // ------------------------------------------------------------ erase paper-trading data
   const paperCounts = () => ({
     open: db.get("SELECT COUNT(*) AS n FROM positions WHERE kind = 'paper' AND status = 'open'").n,
@@ -803,6 +885,8 @@ function positionsView(ctx, rows, withFills = false) {
     const unreal = r.status === 'open' ? r.qty_open * (ltp - r.entry_price) : 0;
     const setup = JSON.parse(r.setup || '{}');
     const out = {
+      journalCount: ctx.db.get('SELECT COUNT(*) AS n FROM journal WHERE position_id = ?', r.id).n,
+      powerHold: !!r.power_date,
       id: r.id,
       kind: r.kind,
       symbol: r.symbol,
