@@ -338,7 +338,7 @@ export function PositionCard({ p: base, actions }) {
   const p = q && base.status !== 'closed' ? { ...base, ltp: q.ltp, pnlPct: (q.ltp / base.entryPrice - 1) * 100, totalPnl: base.realized + base.qtyOpen * (q.ltp - base.entryPrice) } : base;
   const dir = useFlash(p.ltp);
   return (
-    <Card className="p-5" onClick={actions ? undefined : () => go(`/stock/${p.symbol}`)}>
+    <Card className="p-5 min-w-0" onClick={actions ? undefined : () => go(`/stock/${p.symbol}`)}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
