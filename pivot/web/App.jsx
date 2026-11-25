@@ -118,7 +118,7 @@ export default function App() {
 
       <main className="flex-1 min-w-0">
         <NiftyBar />
-        <div className="mx-auto max-w-[1180px] px-4 sm:px-6 lg:px-10 pt-3 pb-32 lg:pb-12">{page}</div>
+        <div className="mx-auto max-w-[1180px] px-4 sm:px-6 lg:px-10 pt-3 pb-32 lg:pb-12 overflow-x-clip">{page}</div>
       </main>
 
       {/* Mobile tab bar */}
@@ -148,7 +148,9 @@ function NiftyBar() {
   return (
     <div className="sticky top-0 z-30 glass border-b hairline pt-[env(safe-area-inset-top)]">
       <div className="mx-auto max-w-[1180px] px-4 sm:px-6 lg:px-10 h-12 flex items-center gap-2 sm:gap-3">
-        <span className="font-bold text-[15px] tracking-wide whitespace-nowrap">NIFTY 50</span>
+        <span className="font-bold text-[15px] tracking-wide whitespace-nowrap">
+          NIFTY<span className="hidden min-[360px]:inline"> 50</span>
+        </span>
         {ix ? (
           <>
             <span className={`num font-bold text-[18px] rounded-md px-1 ${dir === 'up' ? 'flash-up' : dir === 'down' ? 'flash-down' : ''}`}>{price(ix.ltp).replace('₹', '')}</span>
@@ -164,7 +166,7 @@ function NiftyBar() {
         <span className="ml-auto flex items-center gap-2 sm:gap-2.5 shrink-0">
           <AgentDots />
           {label && (
-            <span className="flex items-center gap-1.5 text-[13px] font-semibold text-ink2 whitespace-nowrap">
+            <span className="hidden min-[360px]:flex items-center gap-1.5 text-[13px] font-semibold text-ink2 whitespace-nowrap">
               <span className={`h-2 w-2 rounded-full ${dot}`} />
               <span className="hidden sm:inline">{label}</span>
             </span>

@@ -321,10 +321,19 @@ export function RiskBar({ stop, entry, target, ltp, partialDone }) {
           title={`Now ${price(ltp)}`}
         />
       </div>
-      <div className="flex justify-between text-[13px] text-ink2 mt-2 num">
-        <span>{partialDone ? 'Stop (breakeven)' : 'Stop'} {price(stop)}</span>
-        <span>Buy {price(entry)}</span>
-        <span>{partialDone ? '⅓ booked ✓' : `+10% ${price(target)}`}</span>
+      <div className="grid grid-cols-3 gap-2 text-[13px] text-ink2 mt-2 num leading-tight">
+        <span className="min-w-0">
+          {partialDone ? 'Stop (breakeven)' : 'Stop'}
+          <b className="block text-ink font-semibold text-[14px] truncate">{price(stop)}</b>
+        </span>
+        <span className="min-w-0 text-center">
+          Buy
+          <b className="block text-ink font-semibold text-[14px] truncate">{price(entry)}</b>
+        </span>
+        <span className="min-w-0 text-right">
+          {partialDone ? '⅓ booked' : '+10% target'}
+          <b className="block text-ink font-semibold text-[14px] truncate">{partialDone ? '✓' : price(target)}</b>
+        </span>
       </div>
     </div>
   );

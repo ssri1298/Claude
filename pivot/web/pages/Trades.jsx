@@ -57,18 +57,18 @@ function OpenList({ rows, reload }) {
             p={p}
             actions={
               <div className="mt-4">
-                <div className="grid grid-cols-3 gap-2 text-[14px] text-ink2 mb-4">
+                <div className="grid grid-cols-3 gap-2 text-[14px] text-ink2 mb-4 leading-tight [&>span]:min-w-0 [&_b]:break-words">
                   <span>
                     Value <b className="text-ink num block text-[16px]">{inr(p.value)}</b>
                   </span>
                   <span>
-                    Stop distance <b className="text-ink num block text-[16px]">{pct(p.stopDistPct)}</b>
+                    To stop <b className="text-ink num block text-[16px]">{pct(p.stopDistPct)}</b>
                   </span>
                   <span>
                     Trailing <b className="text-ink block text-[16px]">{p.partialDone ? '21-EMA' : 'After +10%'}</b>
                   </span>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
                   <Button size="sm" tone="soft" onClick={() => go(`/stock/${p.symbol}`)}>
                     Chart
                   </Button>
@@ -81,8 +81,12 @@ function OpenList({ rows, reload }) {
                   <Button size="sm" tone="coralSoft" onClick={() => setConfirm({ p, fraction: 1 })}>
                     Sell all
                   </Button>
-                  {p.gtt && <Pill tone="mint">Backup GTT ✓</Pill>}
                 </div>
+                {p.gtt && (
+                  <div className="mt-2">
+                    <Pill tone="mint">Backup GTT ✓</Pill>
+                  </div>
+                )}
               </div>
             }
           />

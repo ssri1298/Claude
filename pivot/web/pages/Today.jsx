@@ -340,18 +340,18 @@ export function PositionCard({ p: base, actions }) {
   return (
     <Card className="p-5" onClick={actions ? undefined : () => go(`/stock/${p.symbol}`)}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-[21px] font-bold tracking-tight">{p.symbol}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[21px] font-bold tracking-tight truncate max-w-full">{p.symbol}</span>
             {p.grade && <GradeBadge grade={p.grade} />}
             {p.isReentry && <Pill tone="sky">Re-entry</Pill>}
             {p.stage === 1 && <Pill tone="butter">+{p.plannedAdd} at {p.addTime || '15:15'} if it holds</Pill>}
           </div>
-          <div className="text-ink2 text-[15px] num">
+          <div className="text-ink2 text-[15px] num mt-0.5">
             {p.qtyOpen} sh · bought {price(p.entryPrice)} · {p.holdDays}d
           </div>
         </div>
-        <div className="text-right">
+        <div className="text-right shrink-0">
           <div className={`text-[22px] font-bold num rounded-md px-1 -mr-1 ${tone(p.pnlPct)} ${dir === 'up' ? 'flash-up' : dir === 'down' ? 'flash-down' : ''}`}>{pct(p.pnlPct)}</div>
           <div className="text-[13px] text-ink2 num">now {price(p.ltp)}</div>
           <div className={`text-[15px] num font-semibold ${tone(p.totalPnl)}`}>{signed(p.totalPnl)}</div>

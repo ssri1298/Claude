@@ -257,16 +257,16 @@ function HoldCard({ p: base, rules, onChanged, onStop, onSell }) {
   return (
     <Card className="p-5">
       <div className="flex items-start justify-between gap-3">
-        <button onClick={() => go(`/stock/${base.symbol}`)} className="text-left min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-[20px] font-bold">{base.symbol}</span>
+        <button onClick={() => go(`/stock/${base.symbol}`)} className="text-left min-w-0 flex-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[20px] font-bold truncate">{base.symbol}</span>
             {base.grade && <GradeBadge grade={base.grade} />}
           </div>
           <div className="text-ink2 text-[14px] num">
             {base.qtyOpen} shares · bought {price(base.entryPrice)}
           </div>
         </button>
-        <div className="text-right">
+        <div className="text-right shrink-0">
           <div className="num font-bold text-[19px]">{price(ltp)}</div>
           <div className={`num font-semibold text-[15px] ${tone(pnlPct)}`}>{pct(pnlPct)}</div>
         </div>
