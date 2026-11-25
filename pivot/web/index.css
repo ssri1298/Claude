@@ -143,8 +143,8 @@ input[type='number']::-webkit-inner-spin-button { opacity: 0.4; }
 }
 
 /* live price flash */
-.flash-up { animation: flash-up 0.8s ease-out; }
-.flash-down { animation: flash-down 0.8s ease-out; }
+.flash-up { animation: flash-up 0.5s ease-out; }
+.flash-down { animation: flash-down 0.5s ease-out; }
 @keyframes flash-up { 0% { background: rgb(var(--mint) / 0.28); } 100% { background: transparent; } }
 @keyframes flash-down { 0% { background: rgb(var(--coral) / 0.28); } 100% { background: transparent; } }
 

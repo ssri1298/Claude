@@ -1,4 +1,4 @@
-// Live price snapshots for the browser: Nifty 50 + every tracked stock, pushed every 2.5 seconds,
+// Live price snapshots for the browser: Nifty 50 + every tracked stock, pushed every 0.25 seconds,
 // together with a one-line status for each agent (the "agents at work" panel).
 
 import { agentPulse } from './pulse.js';
@@ -32,14 +32,16 @@ export function stockSnapshot(ctx) {
   return out;
 }
 
-export const PUSH_EVERY_MS = 2500;
+export const PUSH_EVERY_MS = 250;
+const PULSE_EVERY = 4; // agent status: once a second is plenty
 
-/** Push only what changed, every 2.5 seconds, while at least one browser is connected. */
+/** Push only what changed, every 0.25 seconds, while at least one browser is connected. */
 export function startQuotePusher(ctx) {
   let last = {};
   let lastIdx = null;
   let lastPhase = null;
   let lastPulse = '';
+  let n = 0;
   return setInterval(() => {
     if (ctx.bus.listenerCount('push') === 0) return;
     const snap = stockSnapshot(ctx);
@@ -49,13 +51,20 @@ export function startQuotePusher(ctx) {
     const idxChanged = idx && (!lastIdx || lastIdx.ltp !== idx.ltp);
     const phaseChanged = ctx.parent?.phase !== lastPhase;
     lastPhase = ctx.parent?.phase;
-    const agents = agentPulse(ctx);
-    const pulseKey = JSON.stringify(agents);
-    const pulseChanged = pulseKey !== lastPulse;
-    lastPulse = pulseKey;
+    let agents;
+    if (n++ % PULSE_EVERY === 0) {
+      const pulse = agentPulse(ctx);
+      const key = JSON.stringify(pulse);
+      if (key !== lastPulse) agents = pulse;
+      lastPulse = key;
+    }
+    const pulseChanged = !!agents;
     if (!Object.keys(changed).length && !idxChanged && !phaseChanged && !pulseChanged) return;
     last = snap;
     lastIdx = idx;
-    ctx.bus.push('quotes', { t: Date.now(), index: idx, q: changed, phase: ctx.parent?.phase, agents });
+    const msg = { t: Date.now(), q: changed, phase: ctx.parent?.phase };
+    if (idxChanged) msg.index = idx;
+    if (agents) msg.agents = agents;
+    ctx.bus.push('quotes', msg);
   }, PUSH_EVERY_MS);
 }

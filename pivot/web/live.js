@@ -1,4 +1,4 @@
-// Live prices in the browser: one snapshot on load, then updates every 2–3 seconds over the stream,
+// Live prices in the browser: one snapshot on load, then updates 4 times a second over the stream,
 // plus each agent's live status (what it is doing right now).
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './lib.js';
@@ -7,6 +7,7 @@ const state = { index: null, q: {}, phase: null, t: 0, agents: null, skew: 0, be
 const subs = new Set();
 const emit = () => subs.forEach((f) => f());
 let started = false;
+let lastBeatAt = 0;
 
 export function startLive() {
   if (started) return;
@@ -34,7 +35,10 @@ export function startLive() {
     state.t = d.t;
     if (d.agents) state.agents = d.agents;
     state.skew = Date.now() - d.t; // server clock → browser clock
-    state.beat++;
+    if (Date.now() - lastBeatAt > 1000) {
+      state.beat++; // heartbeat blink at most once a second
+      lastBeatAt = Date.now();
+    }
     emit();
   });
 }
@@ -69,7 +73,7 @@ export function useFlash(value) {
     }
     setDir(value > prev.current ? 'up' : 'down');
     prev.current = value;
-    const t = setTimeout(() => setDir(null), 800);
+    const t = setTimeout(() => setDir(null), 500);
     return () => clearTimeout(t);
   }, [value]);
   return dir;
