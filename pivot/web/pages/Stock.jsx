@@ -1,12 +1,15 @@
-import { ChevronLeft, Check, X, AlertTriangle } from 'lucide-react';
-import { useApi, price, pct, istDateTime, niceDate } from '../lib.js';
-import { Card, Section, Pill, GradeBadge, Spinner, Empty, ScoreRing, StageBadge, Delta, LivePrice, LiveDist, FlagBadges } from '../components/ui.jsx';
+import { useState } from 'react';
+import { ChevronLeft, Check, X, AlertTriangle, Bell, Trash2, RotateCcw, HelpCircle, Clock } from 'lucide-react';
+import IntradayChart from '../components/IntradayChart.jsx';
+import { api, useApi, price, pct, istDateTime, niceDate } from '../lib.js';
+import { Card, Section, Pill, GradeBadge, Spinner, Empty, ScoreRing, StageBadge, Delta, LivePrice, LiveDist, FlagBadges, Segmented, Button, NumberField, TextField } from '../components/ui.jsx';
 import PriceChart from '../components/PriceChart.jsx';
 import { PositionCard } from './Today.jsx';
 import ScoreHistory from '../components/ScoreHistory.jsx';
 
 export default function Stock({ symbol }) {
   const { data, error } = useApi(`/stock/${symbol}`, { interval: 20000, events: ['positions'] });
+  const [chart, setChart] = useState('daily');
   if (error) return <Empty title="Stock not found" text={error} />;
   if (!data) return <Spinner />;
   const a = data.analysis;
@@ -38,8 +41,20 @@ export default function Stock({ symbol }) {
       </header>
 
       <Card className="p-4 sm:p-5">
-        <PriceChart candles={data.candles} vcp={v.valid ? v : v.pivot ? v : null} positions={data.positions} />
+        <Segmented
+          size="sm"
+          className="mb-3"
+          value={chart}
+          onChange={setChart}
+          options={[
+            { value: 'daily', label: 'Daily' },
+            { value: 'intraday', label: '15-minute' },
+          ]}
+        />
+        {chart === 'daily' ? <PriceChart candles={data.candles} vcp={v.valid ? v : v.pivot ? v : null} positions={data.positions} buyZonePct={data.buyZonePct} /> : <IntradayChart symbol={symbol} />}
       </Card>
+
+      <WhyNot symbol={symbol} />
 
       {data.filter && (
         <Card className="p-4 sm:p-5 flex gap-3 items-start ring-1 ring-butter/40">
@@ -169,6 +184,8 @@ export default function Stock({ symbol }) {
         </Section>
       )}
 
+      <Alerts symbol={symbol} ltp={ltp} pivot={v.pivot} />
+
       <ScoreHistory symbol={symbol} />
 
       {data.watch && (
@@ -187,5 +204,106 @@ function Fact({ label, value, sub }) {
       <div className="num font-bold text-[18px]">{value}</div>
       {sub && <div className="text-ink2 text-[12px]">{sub}</div>}
     </div>
+  );
+}
+
+/** "Why didn't Pivot buy this?" — every rule for this stock, in the order the agents apply them. */
+function WhyNot({ symbol }) {
+  const [open, setOpen] = useState(false);
+  const { data } = useApi(open ? `/stock/${symbol}/why` : null, { enabled: open, interval: open ? 30000 : 0 });
+  const icon = { ok: <Check size={18} className="text-mint" />, stop: <X size={18} className="text-coral" />, wait: <Clock size={17} className="text-butter" />, info: <HelpCircle size={17} className="text-sky" /> };
+  return (
+    <Card className="p-4 sm:p-5">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between gap-3 text-left">
+        <span className="flex items-center gap-2 font-bold text-[17px]">
+          <HelpCircle size={20} className="text-lav" /> Why didn't Pivot buy this?
+        </span>
+        <span className="text-accent font-semibold text-[15px]">{open ? 'Hide' : 'Check'}</span>
+      </button>
+      {open &&
+        (!data ? (
+          <Spinner />
+        ) : (
+          <>
+            <p className="mt-3 text-[16px] font-semibold">{data.verdict}</p>
+            <ul className="mt-3 divide-y hairline">
+              {data.items.map((i, k) => (
+                <li key={k} className="flex gap-3 py-2.5">
+                  <span className="h-7 w-7 shrink-0 rounded-full bg-card2 flex items-center justify-center">{icon[i.level]}</span>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-[15px]">{i.label}</div>
+                    <div className="text-ink2 text-[14px] leading-snug">{i.detail}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        ))}
+    </Card>
+  );
+}
+
+/** Price alerts for this stock. */
+function Alerts({ symbol, ltp, pivot }) {
+  const { data, reload } = useApi(`/alerts?symbol=${symbol}`, { events: ['alerts'] });
+  const [val, setVal] = useState(null);
+  const [note, setNote] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const target = val ?? (pivot ? Number(pivot) : ltp ? Math.round(ltp * 1.05 * 20) / 20 : null);
+  const add = async () => {
+    setBusy(true);
+    setErr('');
+    try {
+      await api('/alerts', { method: 'POST', body: { symbol, price: target, note } });
+      setVal(null);
+      setNote('');
+      reload();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Section title="Price alerts" subtitle="Get a notification when the price gets there — any stock, any level">
+      <Card className="p-4 sm:p-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[16px] font-semibold">Alert me at</span>
+          <NumberField value={target} onChange={setVal} step={0.05} width="w-32" suffix="₹" />
+          {ltp && target ? <span className="text-ink2 text-[14px]">({target >= ltp ? 'goes above' : 'falls below'} · now {price(ltp)})</span> : null}
+        </div>
+        <div className="flex gap-2 mt-3">
+          <TextField value={note} onChange={setNote} placeholder="Note (optional), e.g. 'pivot breakout'" />
+          <Button icon={Bell} loading={busy} disabled={!target} onClick={add}>
+            Add
+          </Button>
+        </div>
+        {err && <div className="text-coral font-semibold mt-2">{err}</div>}
+        {data?.length > 0 && (
+          <div className="mt-4 divide-y hairline">
+            {data.map((a) => (
+              <div key={a.id} className="flex items-center gap-3 py-2.5">
+                <Bell size={18} className={a.active ? 'text-accent' : 'text-ink3'} />
+                <div className="flex-1 min-w-0">
+                  <div className={`font-semibold ${a.active ? '' : 'text-ink3'}`}>
+                    {a.op === 'below' ? 'Falls below' : 'Goes above'} {price(a.price)}
+                  </div>
+                  <div className="text-ink2 text-[13px] truncate">{a.active ? a.note || 'Waiting' : `Triggered ${istDateTime(a.triggered)} at ${price(a.triggeredPrice)}`}</div>
+                </div>
+                {!a.active && (
+                  <button onClick={() => api(`/alerts/${a.id}/rearm`, { method: 'POST' }).then(reload)} className="text-accent" aria-label="Turn on again">
+                    <RotateCcw size={18} />
+                  </button>
+                )}
+                <button onClick={() => api(`/alerts/${a.id}`, { method: 'DELETE' }).then(reload)} className="text-ink3 hover:text-coral" aria-label="Delete alert">
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </Section>
   );
 }

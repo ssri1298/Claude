@@ -295,8 +295,15 @@ function ApprovalCard({ a, now, onDone }) {
           <Button tone="mint" size="lg" icon={Check} loading={busy === 'approve'} onClick={() => decide('approve')}>
             Approve
           </Button>
+          <Button tone="soft" loading={busy === 'half'} onClick={() => decide('half')}>
+            ½ Buy half
+          </Button>
+          <Button tone="soft" loading={busy === 'snooze'} onClick={() => decide('snooze')}>
+            ⏰ Remind me in 15 min
+          </Button>
         </div>
       )}
+      {a.remindAt && !msg && <div className="text-ink3 text-[13px] mt-2 text-center">{a.reminded ? 'Reminded you again' : `I'll remind you at ${new Date(a.remindAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })}`}</div>}
     </Card>
   );
 }

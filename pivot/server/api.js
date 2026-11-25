@@ -2,7 +2,7 @@
 
 import { Worker } from 'node:worker_threads';
 import { randomInt } from 'node:crypto';
-import { ist, tradingDaysBetween } from './core/time.js';
+import { ist, tradingDaysBetween, MARKET } from './core/time.js';
 import { saveSecrets, maskSecrets } from './core/settings.js';
 import { computeStats } from './engine/stats.js';
 import { rMultiple } from './engine/rules.js';
@@ -13,6 +13,8 @@ import { agentPulse } from './core/pulse.js';
 import { buildMorning, buildEvening, saveReport, buildPeriodReport, periodRange, taxRows, taxCsv } from './agents/reports.js';
 import { stockBadges, filterBlock, refreshFlags } from './core/stockflags.js';
 import { reportCard } from './engine/reportcard.js';
+import { loadAlerts } from './core/alerts.js';
+import { whyNot } from './core/whynot.js';
 import { pruneHolds, setBlocked, setCorrectionBuys, setPositionHold } from './core/overrides.js';
 import { CHECK_LABELS } from './engine/confirm.js';
 import { syncHolidays } from './core/holidays.js';
@@ -179,6 +181,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
       return {
         analysis: a || null,
         badges: a ? stockBadges(ctx, a, t.date) : [],
+        buyZonePct: ctx.settings.rules.buyZonePct,
         filter: a ? filterBlock(ctx, a, t.date) : null,
         info: u,
         live: ctx.live.get(sym) || null,
@@ -187,6 +190,54 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
         positions: positionsView(ctx, db.all("SELECT * FROM positions WHERE symbol = ? AND kind != 'shadow' ORDER BY entry_ts DESC", sym)),
         signals: db.all('SELECT * FROM signals WHERE symbol = ? ORDER BY id DESC LIMIT 20', sym),
       };
+    }),
+  );
+
+  app.get('/api/stock/:symbol/why', wrap((req) => whyNot(ctx, req.params.symbol.toUpperCase())));
+
+  // 15-minute candles for one day: today's live candles, the saved cache, or a download from Kite
+  app.get(
+    '/api/stock/:symbol/intraday',
+    wrap(async (req) => {
+      const sym = req.params.symbol.toUpperCase();
+      const u = db.get('SELECT symbol, token FROM universe WHERE symbol = ?', sym);
+      if (!u) throw Object.assign(new Error('Unknown stock'), { status: 404 });
+      const today = ist(ctx.clock.now()).date;
+      const lastDaily = db.get('SELECT MAX(date) AS d FROM candles WHERE token = ?', u.token)?.d;
+      let date = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '') ? req.query.date : null;
+      const live = ctx.intraday?.get(u.token);
+      if (!date) date = live?.bars?.size && ctx.parent.phase !== 'pre-market' ? today : lastDaily || today;
+      let bars = [];
+      let source = 'saved';
+      if (date === today && live?.bars?.size) {
+        source = 'live';
+        bars = [...live.bars.entries()].sort((x, y) => x[0] - y[0]).map(([b, x]) => {
+          const m = MARKET.open + b * 15;
+          return { time: `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`, open: x.o, high: x.h, low: x.l, close: x.c, volume: 0 };
+        });
+      } else {
+        bars = db.all('SELECT time, open, high, low, close, volume FROM candles15 WHERE token = ? AND date = ? ORDER BY time', u.token, date);
+        if (!bars.length && ctx.feed.history15 && (ctx.demo || ctx.kiteSession?.connected)) {
+          try {
+            const got = (await ctx.feed.history15(u.token, date, date)).filter((b) => b.date === date);
+            db.tx(() => {
+              for (const b of got) db.run('INSERT OR REPLACE INTO candles15(token, date, time, open, high, low, close, volume) VALUES (?,?,?,?,?,?,?,?)', u.token, b.date, b.time, b.open, b.high, b.low, b.close, b.volume);
+            });
+            bars = got.map(({ time, open, high, low, close, volume }) => ({ time, open, high, low, close, volume }));
+            source = 'downloaded';
+          } catch (e) {
+            source = 'unavailable: ' + e.message;
+          }
+        }
+      }
+      const a = ctx.analysis.get(sym);
+      const days = [
+        ...new Set([
+          ...db.all('SELECT date FROM signals WHERE symbol = ? ORDER BY id DESC LIMIT 6', sym).map((r) => r.date),
+          ...db.all("SELECT entry_date AS date FROM positions WHERE symbol = ? AND kind IN ('paper','live') ORDER BY id DESC LIMIT 6", sym).map((r) => r.date),
+        ]),
+      ].sort().reverse();
+      return { symbol: sym, date, bars, source, vwap: date === today ? live?.vwap ?? null : null, pivot: a?.vcp?.pivot ?? null, stop: a?.vcp?.stop ?? null, breakoutDays: days, lastDaily, today };
     }),
   );
 
@@ -272,7 +323,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
   );
 
   // ------------------------------------------------------------ approvals & positions
-  app.post('/api/approvals/:id/:decision', wrap(async (req) => ({ message: await ag().executor.decide(Number(req.params.id), req.params.decision === 'approve' ? 'approve' : 'reject', 'app') })));
+  app.post('/api/approvals/:id/:decision', wrap(async (req) => ({ message: await ag().executor.decide(Number(req.params.id), ['approve', 'half', 'snooze'].includes(req.params.decision) ? req.params.decision : 'reject', 'app') })));
 
   app.get(
     '/api/positions',
@@ -725,6 +776,33 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
     }),
   );
   app.delete('/api/journal/:id', wrap((req) => (db.run('DELETE FROM journal WHERE id = ?', Number(req.params.id)), { ok: true })));
+
+  // ------------------------------------------------------------ price alerts
+  const alertView = (a) => ({ id: a.id, symbol: a.symbol, op: a.op, price: a.price, note: a.note, created: a.created, triggered: a.triggered, triggeredPrice: a.triggered_price, active: !!a.active, ltp: ctx.quotes.get(a.token)?.ltp ?? null });
+  app.get(
+    '/api/alerts',
+    wrap((req) => {
+      const rows = req.query.symbol ? db.all('SELECT * FROM alerts WHERE symbol = ? ORDER BY active DESC, id DESC', String(req.query.symbol).toUpperCase()) : db.all('SELECT * FROM alerts ORDER BY active DESC, id DESC LIMIT 200');
+      return rows.map(alertView);
+    }),
+  );
+  app.post(
+    '/api/alerts',
+    wrap((req) => {
+      const symbol = String(req.body?.symbol || '').toUpperCase().trim();
+      const u = db.get('SELECT symbol, token FROM universe WHERE symbol = ?', symbol);
+      if (!u) throw Object.assign(new Error(`${symbol || 'That stock'} is not in the Nifty 500 list`), { status: 400 });
+      const priceN = Number(req.body.price);
+      if (!(priceN > 0)) throw Object.assign(new Error('Enter a price'), { status: 400 });
+      const ltp = ctx.quotes.get(u.token)?.ltp;
+      const op = req.body.op === 'below' || req.body.op === 'above' ? req.body.op : ltp && priceN < ltp ? 'below' : 'above';
+      const id = db.insert('alerts', { symbol, token: u.token, op, price: priceN, note: String(req.body.note || '').slice(0, 200), created: new Date().toISOString(), active: 1 });
+      loadAlerts(ctx);
+      return alertView(db.get('SELECT * FROM alerts WHERE id = ?', id));
+    }),
+  );
+  app.post('/api/alerts/:id/rearm', wrap((req) => (db.run('UPDATE alerts SET active = 1, triggered = NULL, triggered_price = NULL WHERE id = ?', Number(req.params.id)), loadAlerts(ctx), { ok: true })));
+  app.delete('/api/alerts/:id', wrap((req) => (db.run('DELETE FROM alerts WHERE id = ?', Number(req.params.id)), loadAlerts(ctx), { ok: true })));
 
   // ------------------------------------------------------------ erase paper-trading data
   const paperCounts = () => ({

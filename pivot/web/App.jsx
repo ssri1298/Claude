@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Sun, Radar, Briefcase, BarChart3, FlaskConical, Bot, Settings as SettingsIcon, MoreHorizontal, Diamond, Gavel, Newspaper } from 'lucide-react';
+import { Sun, Radar, Briefcase, BarChart3, FlaskConical, Bot, Settings as SettingsIcon, MoreHorizontal, Diamond, Gavel, Newspaper, Bell } from 'lucide-react';
 import { api, useRoute, go, connectStream, disconnectStream, price } from './lib.js';
 import { startLive, useIndex, usePhase, useFlash } from './live.js';
 import { Spinner } from './components/ui.jsx';
@@ -16,6 +16,7 @@ import Settings from './pages/Settings.jsx';
 import More from './pages/More.jsx';
 import Overrule from './pages/Overrule.jsx';
 import Reports from './pages/Reports.jsx';
+import AlertsPage from './pages/AlertsPage.jsx';
 
 const NAV = [
   { path: '/', label: 'Today', icon: Sun },
@@ -26,6 +27,7 @@ const NAV = [
   { path: '/backtest', label: 'Backtest', icon: FlaskConical },
   { path: '/agents', label: 'Agents', icon: Bot },
   { path: '/overrule', label: 'Overrule', icon: Gavel },
+  { path: '/alerts', label: 'Alerts', icon: Bell },
   { path: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 const TABS = [NAV[0], NAV[1], NAV[2], NAV[3], { path: '/more', label: 'More', icon: MoreHorizontal }];
@@ -79,6 +81,9 @@ export default function App() {
     case '/reports':
       page = <Reports key={route.query.date || ''} query={route.query} />;
       break;
+    case '/alerts':
+      page = <AlertsPage />;
+      break;
     case '/overrule':
       page = <Overrule />;
       break;
@@ -91,7 +96,7 @@ export default function App() {
     default:
       page = <Today />;
   }
-  const isActive = (p) => (p === '/' ? top === '/' : top === p || (p === '/scanner' && top === '/stock') || (p === '/more' && ['/reports', '/backtest', '/agents', '/overrule', '/settings'].includes(top)));
+  const isActive = (p) => (p === '/' ? top === '/' : top === p || (p === '/scanner' && top === '/stock') || (p === '/more' && ['/reports', '/backtest', '/agents', '/overrule', '/alerts', '/settings'].includes(top)));
 
   return (
     <div className="min-h-screen lg:flex">

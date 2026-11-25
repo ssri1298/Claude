@@ -15,6 +15,7 @@ import { round } from '../engine/vcp.js';
 import { esc } from '../notify/telegram.js';
 import { buildMorning, buildEvening, saveReport, morningText, eveningText, buildPeriodReport, periodText } from './reports.js';
 import { periodEnds } from '../core/watchdog.js';
+import { checkAlerts } from '../core/alerts.js';
 
 const NAME = 'Parent';
 const inr = (x) => '₹' + Math.round(Number(x)).toLocaleString('en-IN');
@@ -126,6 +127,7 @@ export class Parent {
         this.log('Close check — evaluating trailing exits (close below 21-day EMA)');
       }
       await this.executor.onTick({ isCloseCheck });
+      checkAlerts(this.ctx);
 
       // Two-stage buy: add the second part of new positions whose breakout held
       const addAt = settings.rules.twoStage?.addTime || '15:15';

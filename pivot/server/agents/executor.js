@@ -201,14 +201,22 @@ export class Executor {
     this.markSignal(sig.id, 'awaiting_approval', '');
     this.log(`Asking you to approve: BUY ${proposal.qty} ${sig.symbol} @ ~${inr(entry)} (stop ${inr(proposal.stop)}, ${proposal.stopPct}%)`, 'info');
     this.ctx.bus.push('approval', { id });
-    const msg = await this.ctx.notify?.('proposals', this.proposalText(proposal, expires), [
+    const msg = await this.ctx.notify?.('proposals', this.proposalText(proposal, expires), this.approvalButtons(id, sig.symbol));
+    if (msg?.message_id) db.run('UPDATE approvals SET data = json_set(data, "$.tgMessageId", ?) WHERE id = ?', msg.message_id, id);
+  }
+
+  approvalButtons(id, symbol) {
+    return [
       [
         { text: '✅ Approve', callback_data: `approve:${id}` },
         { text: '❌ Reject', callback_data: `reject:${id}` },
       ],
-      ...(this.ctx.publicUrl ? [[{ text: 'Open in Pivot', url: `${this.ctx.publicUrl}/#/stock/${sig.symbol}` }]] : []),
-    ]);
-    if (msg?.message_id) db.run('UPDATE approvals SET data = json_set(data, "$.tgMessageId", ?) WHERE id = ?', msg.message_id, id);
+      [
+        { text: '½ Buy half', callback_data: `half:${id}` },
+        { text: '⏰ In 15 min', callback_data: `snooze:${id}` },
+      ],
+      ...(this.ctx.publicUrl ? [[{ text: 'Open in Pivot', url: `${this.ctx.publicUrl}/#/stock/${symbol}` }]] : []),
+    ];
   }
 
   proposalText(p, expires) {
@@ -257,7 +265,25 @@ export class Executor {
     const ap = db.get('SELECT * FROM approvals WHERE id = ?', id);
     if (!ap) return 'Not found';
     if (ap.status !== 'pending') return `Already ${ap.status}`;
-    const p = JSON.parse(ap.data);
+    let p = JSON.parse(ap.data);
+    // "Remind me in 15 minutes": keep it open longer and ask again later
+    if (decision === 'snooze') {
+      const remindAt = new Date(clock.now().getTime() + 15 * 60000);
+      const expires = new Date(Math.max(new Date(ap.expires).getTime(), remindAt.getTime() + 10 * 60000));
+      p.remindAt = remindAt.toISOString();
+      p.reminded = false;
+      db.run('UPDATE approvals SET data = ?, expires = ? WHERE id = ?', JSON.stringify(p), expires.toISOString(), id);
+      this.ctx.bus.push('approval', { id });
+      this.log(`You asked to be reminded about ${p.symbol} in 15 minutes`);
+      return `OK — I'll ask again at ${ist(remindAt).hhmm}`;
+    }
+    // "Buy half": same trade, half the shares (and half of any planned second part)
+    if (decision === 'half') {
+      const q = Math.max(1, Math.floor(p.qty / 2));
+      p = { ...p, qty: q, fullQty: Math.max(q, Math.floor((p.fullQty || p.qty) / 2)), plannedAdd: Math.floor((p.plannedAdd || 0) / 2), value: round(q * p.price), half: true };
+      db.run('UPDATE approvals SET data = ?, qty = ? WHERE id = ?', JSON.stringify(p), q, id);
+      decision = 'approve';
+    }
     const done = (status, note) => {
       db.run('UPDATE approvals SET status = ?, decided_ts = ?, decided_by = ? WHERE id = ?', status, clock.now().toISOString(), by, id);
       this.ctx.bus.push('approval', { id });
@@ -304,6 +330,11 @@ export class Executor {
     for (const ap of db.all("SELECT * FROM approvals WHERE status = 'pending'")) {
       const p = JSON.parse(ap.data);
       const ltp = this.ltpOf(p.symbol, p.price);
+      if (p.remindAt && !p.reminded && new Date(p.remindAt) <= clock.now()) {
+        p.reminded = true;
+        db.run('UPDATE approvals SET data = ? WHERE id = ?', JSON.stringify(p), ap.id);
+        this.ctx.notify?.('proposals', `⏰ <b>Reminder</b> — ${this.proposalText(p, new Date(ap.expires))}`, this.approvalButtons(ap.id, p.symbol));
+      }
       let why = null;
       if (new Date(ap.expires) < clock.now()) why = 'No answer in time';
       else if (ltp > p.pivot * (1 + zone / 100)) why = 'Price ran past the buy zone';

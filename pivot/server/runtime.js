@@ -12,6 +12,7 @@ import { Telegram } from './notify/telegram.js';
 import { Parent } from './agents/parent.js';
 import { startQuotePusher } from './core/quotes.js';
 import { loadFlags } from './core/stockflags.js';
+import { loadAlerts } from './core/alerts.js';
 import { createWatchdog } from './core/watchdog.js';
 import { dirname } from 'node:path';
 import { WebPush, toPlain } from './notify/webpush.js';
@@ -133,7 +134,7 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
         ctx.bus.push('settings', {});
       },
       onCallback: async (action, id) => {
-        if (action === 'approve' || action === 'reject') return ctx.agents.executor.decide(id, action, 'telegram');
+        if (['approve', 'reject', 'half', 'snooze'].includes(action)) return ctx.agents.executor.decide(id, action, 'telegram');
         return 'Unknown action';
       },
       onCommand: (cmd) => telegramCommand(ctx, cmd),
@@ -162,8 +163,9 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
   ctx.intraday = new IntradayTracker(ctx.clock);
   ctx.feed.on('ticks', (t) => ctx.intraday.onTicks(t));
 
-  // ---------- stock filters (results dates, surveillance, circuit bands)
+  // ---------- stock filters (results dates, surveillance, circuit bands) and price alerts
   loadFlags(ctx);
+  loadAlerts(ctx);
 
   // ---------- agents
   const parent = new Parent(ctx);

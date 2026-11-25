@@ -24,7 +24,7 @@ const LINES = [
   { key: 'sma200', label: '200 DMA', light: '#eb6834', dark: '#d95926', fn: (c) => sma(c, 200) },
 ];
 
-export default function PriceChart({ candles, vcp, positions = [], height: heightProp }) {
+export default function PriceChart({ candles, vcp, positions = [], height: heightProp, buyZonePct = 0 }) {
   const ref = useRef(null);
   const dark = useIsDark();
   const compact = typeof window !== 'undefined' && window.innerWidth < 640;
@@ -68,15 +68,25 @@ export default function PriceChart({ candles, vcp, positions = [], height: heigh
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
     vol.setData(candles.map((c) => ({ time: c.date, value: c.volume, color: c.close >= c.open ? gain + '66' : loss + '66' })));
 
+    const lav = dark ? '#9085e9' : '#6250d6';
     if (vcp?.pivot) {
-      candle.createPriceLine({ price: vcp.pivot, color: dark ? '#9085e9' : '#6250d6', lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Pivot' });
+      candle.createPriceLine({ price: vcp.pivot, color: lav, lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Pivot' });
+      if (buyZonePct) candle.createPriceLine({ price: vcp.pivot * (1 + buyZonePct / 100), color: lav + '88', lineWidth: 1, lineStyle: LineStyle.SparseDotted, axisLabelVisible: false, title: compact ? '' : `Buy zone +${buyZonePct}%` });
       if (vcp.stop) candle.createPriceLine({ price: vcp.stop, color: loss, lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'Stop' });
     }
     const dates = new Set(candles.map((c) => c.date));
     const markers = [];
+    // The contractions drawn as a zig-zag: each swing high → its low, getting smaller to the right
+    const zig = [];
     (vcp?.contractions || []).forEach((k, i) => {
-      if (dates.has(k.highDate)) markers.push({ time: k.highDate, position: 'aboveBar', color: dark ? '#9085e9' : '#6250d6', shape: 'arrowDown', text: compact ? `C${i + 1}` : `C${i + 1} −${Math.round(k.depthPct)}%` });
+      if (dates.has(k.highDate)) markers.push({ time: k.highDate, position: 'aboveBar', color: lav, shape: 'arrowDown', text: compact ? `C${i + 1}` : `C${i + 1} −${Math.round(k.depthPct)}%` });
+      if (dates.has(k.highDate) && k.high) zig.push({ time: k.highDate, value: k.high });
+      if (dates.has(k.lowDate) && k.low) zig.push({ time: k.lowDate, value: k.low });
     });
+    if (zig.length >= 2) {
+      const z = chart.addSeries(LineSeries, { color: lav, lineWidth: 2, lineStyle: LineStyle.Solid, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, pointMarkersVisible: true });
+      z.setData(zig.sort((x, y) => (x.time < y.time ? -1 : 1)).filter((p, i, arr) => i === 0 || p.time !== arr[i - 1].time));
+    }
     for (const p of positions) {
       if (dates.has(p.entryDate)) markers.push({ time: p.entryDate, position: 'belowBar', color: gain, shape: 'arrowUp', text: `Buy ${p.entryPrice}` });
       for (const f of p.fills || []) {
@@ -100,7 +110,7 @@ export default function PriceChart({ candles, vcp, positions = [], height: heigh
       ro.disconnect();
       chart.remove();
     };
-  }, [candles, vcp, dark, range, height, positions, compact]);
+  }, [candles, vcp, dark, range, height, positions, compact, buyZonePct]);
 
   const last = hover || candles?.[candles.length - 1];
   return (
@@ -117,6 +127,14 @@ export default function PriceChart({ candles, vcp, positions = [], height: heigh
             <span className="h-0 w-4 border-t-2 border-dashed" style={{ borderColor: dark ? '#9085e9' : '#6250d6' }} />
             Pivot
           </span>
+          {vcp?.contractions?.length > 0 && (
+            <span className="flex items-center gap-1.5">
+              <span className="text-[13px] leading-none" style={{ color: dark ? '#9085e9' : '#6250d6' }}>
+                ╲╱
+              </span>
+              Contractions
+            </span>
+          )}
         </div>
         <div className="flex gap-1">
           {[

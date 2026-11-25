@@ -500,3 +500,56 @@ test('watchdog: backups leave secrets out; period ends detected', async () => {
   assert.deepEqual(periodEnds('2028-03-31', '2028-04-03'), { week: true, month: true });
   assert.deepEqual(periodEnds('2028-03-15', '2028-03-16'), { week: false, month: false });
 });
+
+test('buy requests: buy half, remind me in 15 minutes', async () => {
+  const { ctx, a, ex, an } = await setup();
+  ctx.updateSettings({ rules: { twoStage: { enabled: false } } });
+  quote(ctx, 101);
+  const [s] = an.rank([signal(a, 101)]);
+  await ex.consider(s);
+  const ap = ctx.db.get("SELECT * FROM approvals WHERE status = 'pending'");
+  const full = JSON.parse(ap.data).qty;
+  const msg = await ex.decide(ap.id, 'snooze', 'test');
+  assert.match(msg, /ask again/);
+  const snoozed = ctx.db.get('SELECT * FROM approvals WHERE id = ?', ap.id);
+  assert.equal(snoozed.status, 'pending');
+  assert.ok(JSON.parse(snoozed.data).remindAt);
+  const sent = [];
+  ctx.notify = async (type, text) => sent.push(type + ':' + text);
+  ctx.clock.set(new Date(ctx.clock.now().getTime() + 16 * 60000));
+  ex.expireApprovals();
+  assert.ok(sent.some((x) => /Reminder/.test(x)), 'reminded after 15 minutes');
+  await ex.decide(ap.id, 'half', 'test');
+  await new Promise((r) => setTimeout(r, 20));
+  const pos = ctx.db.get("SELECT * FROM positions WHERE kind = 'paper'");
+  assert.equal(pos.qty_initial, Math.floor(full / 2));
+});
+
+test('price alerts fire once when the price crosses', async () => {
+  const { ctx } = await setup();
+  const { loadAlerts, checkAlerts } = await import('../server/core/alerts.js');
+  ctx.db.insert('alerts', { symbol: 'TEST', token: 1, op: 'above', price: 105, created: new Date().toISOString(), active: 1 });
+  loadAlerts(ctx);
+  const sent = [];
+  ctx.notify = async (type, text) => sent.push(type);
+  quote(ctx, 104);
+  assert.equal(checkAlerts(ctx).length, 0);
+  quote(ctx, 105.5);
+  assert.equal(checkAlerts(ctx).length, 1);
+  assert.deepEqual(sent, ['alerts']);
+  assert.equal(checkAlerts(ctx).length, 0, 'fires once');
+  assert.equal(ctx.db.get('SELECT active FROM alerts').active, 0);
+});
+
+test('why-not checklist explains what stops a buy', async () => {
+  const { ctx, a } = await setup();
+  const { whyNot } = await import('../server/core/whynot.js');
+  quote(ctx, 99);
+  ctx.flags = { results: {}, surveillance: {}, bands: {}, fno: new Set() };
+  let w = await whyNot(ctx, 'TEST');
+  assert.match(w.verdict, /Ready/);
+  a.score = 40;
+  w = await whyNot(ctx, 'TEST');
+  assert.match(w.verdict, /setup score/);
+  assert.ok(w.items.some((i) => i.label === 'Setup score' && !i.ok));
+});

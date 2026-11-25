@@ -148,6 +148,45 @@ You always have the final say. On the **Overrule** page you can:
 
 The **stop-loss can never be switched off** — you can only move it. Everything you change is logged under "Your overrules".
 
+## Extra safety and learning tools
+
+**Stock filters** (Settings → Buying rules → Stock filters). No new buys:
+- within 5 days before quarterly results;
+- in stocks on NSE's ASM/GSM surveillance lists;
+- in non-F&O stocks with a 5% or 10% circuit band;
+- in stocks trading under ₹10 crore a day.
+
+Badges on the Scanner and stock pages show these, and the stock page says when a filter blocks a buy. The lists refresh every morning and evening; results dates and surveillance lists come from NSE, circuit bands from Zerodha. You can also choose **Only buy in leading sectors**. See **Scanner → Sectors**.
+
+**Position sizing** (Settings → Capital). *Same % of capital*, or *By risk*: each trade risks the same share of your capital (for example 0.75%), so tight setups get bigger positions, up to a maximum.
+
+**Big winners** (Settings → Selling rules → Big winners):
+- *8-week hold*: a stock up 20% within 3 weeks of buying is kept for 8 weeks without the trailing exit.
+- *Climax sale*: sells half of what's left after a vertical +25% run.
+
+**Market health** now counts real *distribution days*: days the Nifty falls on heavier volume.
+
+**Rule report card** (Dashboard). Your closed trades are grouped by score, market, sector, stop size, volume and base depth, with suggestions where a group loses money.
+
+**Backtest.** Switch compounding on or off, choose how trades are sized, and read the *Luck check* (Monte Carlo) and *Results by period*. Plan for the "bad drawdown" figure.
+
+**Watchdog and backups** (Settings → App & data):
+1. Create a free check at healthchecks.io (period 1 minute, grace 3 minutes).
+2. Paste its ping URL into Pivot. If the server stops, healthchecks.io alerts you.
+3. Backups are made every evening. Turn on *Send it to my Telegram* to keep a copy off the server.
+
+**Reports.** Weekly and Monthly tabs. The **Tax statement** gives a capital-gains CSV per financial year. Check it against Zerodha Console before filing.
+
+**Journal.** Trades → **Journal**: add notes and tags to any trade. They appear in the weekly report.
+
+**Stock page:**
+- Contractions drawn on the chart, plus a buy-zone line.
+- A **15-minute** chart for today or past breakout days.
+- **Why didn't Pivot buy this?** checks every rule for that stock.
+- **Price alerts**: all of them are listed under More → Alerts.
+
+**Buy requests** also offer **Buy half** and **Remind me in 15 min**, in the app and on Telegram.
+
 ## Starting paper trading again
 
 **Settings → App & data → Erase paper-trading data** deletes every paper trade, the paper equity curve and the Dashboard statistics, and starts the paper account again at your paper capital. You can also erase the shadow trades (signals the agents tracked but did not take). Live (real-money) trades, settings, the watchlist and scores are never touched.
