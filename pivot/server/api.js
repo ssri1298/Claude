@@ -238,6 +238,8 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
     '/api/quotes',
     wrap(() => ({ t: Date.now(), index: indexSnapshot(ctx), q: stockSnapshot(ctx), phase: ctx.parent.phase, demo: ctx.demo, agents: agentPulse(ctx) })),
   );
+  // All tradable symbols — lets the activity feed turn stock names into links
+  app.get('/api/symbols', wrap(() => db.all('SELECT symbol FROM universe WHERE active = 1').map((r) => r.symbol)));
   app.get(
     '/api/stock/:symbol/scores',
     wrap((req) => {

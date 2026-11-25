@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Crown, Radar, Sparkles, ShieldCheck, Check, X, KeyRound, Pause, Play, FastForward, Gauge, TrendingUp, TrendingDown, Activity , Timer, Gavel } from 'lucide-react';
+import { Crown, Radar, Sparkles, ShieldCheck, Check, X, KeyRound, Pause, Play, FastForward, Gauge, TrendingUp, TrendingDown, Activity , Timer, Gavel, ChevronRight } from 'lucide-react';
 import { api, useApi, go, inr, price, pct, signed, tone, istTime, compactInr } from '../lib.js';
 import { Card, Section, Pill, GradeBadge, Button, Spinner, Empty, RiskBar, Segmented, Contractions, StageBadge, Delta , LivePrice } from '../components/ui.jsx';
-import { useQuote, useFlash } from '../live.js';
+import { useQuote, useFlash, useSymbols } from '../live.js';
 import AgentPulse from '../components/AgentPulse.jsx';
 
 
@@ -399,10 +399,36 @@ function SetupCard({ s }) {
 const LEVEL_TONE = { success: 'text-mint', warn: 'text-butter', error: 'text-coral', info: 'text-ink3' };
 const AGENT_BG = { You: 'bg-coral-soft text-coral', Parent: 'bg-lav-soft text-lav', Screener: 'bg-sky-soft text-sky', Analyst: 'bg-peach-soft text-peach', Executor: 'bg-mint-soft text-mint' };
 
+const SYMBOL_RE = /([A-Z][A-Z0-9&-]{1,19})/g;
+
+/** Message text with every known stock symbol turned into a link to its page. */
+export function LinkedText({ text, symbols }) {
+  if (!symbols || !text) return text;
+  return text.split(SYMBOL_RE).map((part, i) =>
+    i % 2 === 1 && symbols.has(part) ? (
+      <button
+        key={i}
+        onClick={(ev) => {
+          ev.stopPropagation();
+          go(`/stock/${encodeURIComponent(part)}`);
+        }}
+        className="font-semibold text-accent underline decoration-accent/30 underline-offset-[3px] hover:decoration-accent"
+      >
+        {part}
+      </button>
+    ) : (
+      part
+    ),
+  );
+}
+
 export function EventRow({ e }) {
   const Icon = { You: Gavel, Parent: Crown, Screener: Radar, Analyst: Sparkles, Executor: ShieldCheck }[e.agent] || Activity;
+  const symbols = useSymbols();
+  const first = symbols && (e.message || '').match(SYMBOL_RE)?.find((m) => symbols.has(m));
+  const open = first ? () => go(`/stock/${encodeURIComponent(first)}`) : undefined;
   return (
-    <div className="flex gap-3 px-4 sm:px-5 py-3.5 rise">
+    <div onClick={open} className={`flex gap-3 px-4 sm:px-5 py-3.5 rise ${open ? 'cursor-pointer hover:bg-card2/60 active:bg-card2' : ''}`}>
       <span className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${AGENT_BG[e.agent] || 'bg-card2'}`}>
         <Icon size={18} />
       </span>
@@ -413,9 +439,10 @@ export function EventRow({ e }) {
         </div>
         <div className={`text-[16px] leading-snug break-words [overflow-wrap:anywhere] ${e.level === 'error' ? 'text-coral' : ''}`}>
           {e.level !== 'info' && <span className={`${LEVEL_TONE[e.level]} mr-1`}>●</span>}
-          {e.message}
+          <LinkedText text={e.message} symbols={symbols} />
         </div>
       </div>
+      {open && <ChevronRight size={18} className="text-ink3 shrink-0 self-center" />}
     </div>
   );
 }

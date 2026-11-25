@@ -112,3 +112,27 @@ export function ago(ms, now = Date.now()) {
   if (m < 60) return `${m}m ago`;
   return `${Math.round(m / 60)}h ago`;
 }
+
+// ---- Known symbols (to turn stock names in messages into links). Loaded once per session.
+let symbols = null;
+let symbolsLoading = false;
+const symSubs = new Set();
+export function useSymbols() {
+  const v = useSyncExternalStore(
+    (f) => {
+      symSubs.add(f);
+      return () => symSubs.delete(f);
+    },
+    () => symbols,
+  );
+  if (!symbols && !symbolsLoading) {
+    symbolsLoading = true;
+    api('/symbols')
+      .then((list) => {
+        symbols = new Set(list);
+        symSubs.forEach((f) => f());
+      })
+      .catch(() => (symbolsLoading = false));
+  }
+  return v;
+}
