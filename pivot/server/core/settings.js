@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS = {
   notify: { login: true, proposals: true, fills: true, exits: true, morningBrief: true, eveningReport: true, weeklyReport: true, health: true, alerts: true, nearPivot: false },
   backup: { daily: true, telegram: false },
   theme: 'system',
+  universe: 'nifty500', // which stocks to watch: nifty500 | total | all
 };
 
 export function mergeDeep(base, patch) {

@@ -7,7 +7,7 @@ import AgentPulse from '../components/AgentPulse.jsx';
 
 const SCHEDULE = [
   ['08:00', 'Parent', 'Checks the Zerodha login — sends you a one-tap login link on Telegram if needed', Crown],
-  ['08:30', 'Screener', 'Downloads Nifty 500 daily data, ranks relative strength, checks the trend template, finds VCP bases and pivots', Radar],
+  ['08:30', 'Screener', 'Downloads daily data for the watched stocks (Nifty 500, Total Market or all NSE), ranks relative strength, checks the trend template, finds VCP bases and pivots', Radar],
   ['08:35', 'Parent', 'Morning brief to Telegram: market health and the best setups', Crown],
   ['09:15 – 15:30', 'Screener', 'Every minute: all 500 live prices vs. pivots. A cross only arms a stock; the breakout is confirmed by a 15-min close above the pivot, VWAP, strong range position and volume', Radar],
   ['on breakout', 'Analyst', 'Rates the setup 0–100, applies the market filter and minimum score, ranks the best first', Sparkles],

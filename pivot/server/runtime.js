@@ -82,7 +82,7 @@ export async function createRuntime({ dbFile, demo = false, publicUrl = '', auto
     let uni = db.all('SELECT token FROM universe WHERE active = 1');
     if (uni.length < 100) {
       try {
-        uni = await ctx.feed.universe();
+        uni = await ctx.feed.universe({ kind: ctx.settings.universe || 'nifty500' });
       } catch (e) {
         ctx.bus.log('Screener', e.message, { level: 'error' });
       }

@@ -15,7 +15,7 @@ export default function Scanner({ query }) {
 
   return (
     <div>
-      <LargeTitle title="Scanner" subtitle={data ? `Nifty 500 · ${data.total} stocks · data ${data.asOf || '—'}` : 'Nifty 500'} />
+      <LargeTitle title="Scanner" subtitle={data ? `${data.universe || 'Nifty 500'} · ${data.total} stocks · data ${data.asOf || '—'}` : 'Nifty 500'} />
       <ScanStatus />
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center mb-5">
         <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">

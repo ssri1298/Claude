@@ -7,7 +7,7 @@ import { Card } from './ui.jsx';
 
 export const AGENTS = [
   { key: 'parent', name: 'Parent', role: 'Runs the day', Icon: Crown, tile: 'bg-lav-soft text-lav', bar: 'text-lav bg-lav' },
-  { key: 'screener', name: 'Screener', role: 'Scans the Nifty 500', Icon: Radar, tile: 'bg-sky-soft text-sky', bar: 'text-sky bg-sky' },
+  { key: 'screener', name: 'Screener', role: 'Scans the market', Icon: Radar, tile: 'bg-sky-soft text-sky', bar: 'text-sky bg-sky' },
   { key: 'analyst', name: 'Analyst', role: 'Rates breakouts', Icon: Sparkles, tile: 'bg-peach-soft text-peach', bar: 'text-peach bg-peach' },
   { key: 'executor', name: 'Executor', role: 'Buys & guards trades', Icon: ShieldCheck, tile: 'bg-mint-soft text-mint', bar: 'text-mint bg-mint' },
 ];

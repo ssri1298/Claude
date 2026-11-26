@@ -148,6 +148,21 @@ You always have the final say. On the **Overrule** page you can:
 
 The **stop-loss can never be switched off** — you can only move it. Everything you change is logged under "Your overrules".
 
+## Which stocks Pivot watches
+
+Go to **Settings → Buying rules → Stocks to watch** and choose one of three lists:
+
+| Choice | What's in it | Good to know |
+|---|---|---|
+| **Nifty 500** | The 500 biggest companies | The default |
+| **Total Market** | About 750 stocks: the Nifty 500 plus smaller companies | More setups, slightly less liquid |
+| **All NSE** | About 2,000 stocks: every NSE share | Leaves out ETFs, bonds and SME / trade-to-trade (BE) series. Keep the minimum-turnover filter on, because many of these stocks are small and thin. |
+
+- **The first switch takes a while.** After your Zerodha login, the first download takes about 10–15 minutes.
+- **Mornings get a little slower.** Every morning's preparation takes about a minute longer for every extra 200 stocks.
+- **Industries (All NSE only).** These are known only for stocks that are in an NSE index list. The other stocks get no sector score.
+- **Nothing else changes.** Your trades and settings are kept.
+
 ## Extra safety and learning tools
 
 **Stock filters** (Settings → Buying rules → Stock filters). No new buys:

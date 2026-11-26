@@ -119,7 +119,7 @@ function DailyReports({ query }) {
           <Empty
             icon={shown === 'morning' ? Sun : Moon}
             title={`No ${shown} report${sel === today ? ' yet' : ''}`}
-            text={shown === 'morning' ? 'The morning brief is made at 08:30 after the Screener analyses the Nifty 500.' : 'The evening report is made at 15:40 after the market closes.'}
+            text={shown === 'morning' ? 'The morning brief is made at 08:30 after the Screener analyses the market.' : 'The evening report is made at 15:40 after the market closes.'}
             action={
               sel === today && (
                 <Button tone="lav" loading={busy} onClick={() => generate(shown)}>

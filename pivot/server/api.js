@@ -7,7 +7,7 @@ import { saveSecrets, maskSecrets } from './core/settings.js';
 import { computeStats } from './engine/stats.js';
 import { rMultiple } from './engine/rules.js';
 import { round } from './engine/vcp.js';
-import { NIFTY50_TOKEN, parseNifty500Csv } from './broker/feeds.js';
+import { NIFTY50_TOKEN, parseNifty500Csv, UNIVERSES, universeLabel } from './broker/feeds.js';
 import { indexSnapshot, stockSnapshot } from './core/quotes.js';
 import { agentPulse } from './core/pulse.js';
 import { buildMorning, buildEvening, saveReport, buildPeriodReport, periodRange, taxRows, taxCsv } from './agents/reports.js';
@@ -160,7 +160,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
       else if (f === 'trend') list = list.filter((a) => a.trend?.pass);
       const q = (req.query.q || '').toUpperCase();
       if (q) list = [...ctx.analysis.values()].filter((a) => a.symbol.includes(q) || (a.name || '').toUpperCase().includes(q));
-      return { asOf: ctx.asOf, total: ctx.analysis.size, rows: list.sort((a, b) => b.score - a.score).slice(0, 500).map((a) => brief(ctx, a)) };
+      return { asOf: ctx.asOf, total: ctx.analysis.size, universe: universeLabel(ctx.settings.universe), rows: list.sort((a, b) => b.score - a.score).slice(0, 500).map((a) => brief(ctx, a)) };
     }),
   );
 
@@ -471,6 +471,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
       push: { devices: ctx.webpush?.subs?.().length || 0 },
       flags: { updated: ctx.flags?.updated || null, problems: ctx.flags?.problems || [], results: Object.keys(ctx.flags?.results || {}).length, surveillance: Object.keys(ctx.flags?.surveillance || {}).length, bands: Object.keys(ctx.flags?.bands || {}).length },
       universeCount: db.get('SELECT COUNT(*) AS n FROM universe WHERE active = 1').n,
+      universeLabel: universeLabel(ctx.settings.universe),
       historyFrom: db.get('SELECT MIN(date) AS d FROM candles').d,
       holidayNames: db.kvGet('holidayNames', {}),
       holidaySync: db.kvGet('holidaySync'),
@@ -821,6 +822,23 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
     }),
   );
   app.get('/api/sectors', wrap(() => ({ asOf: ctx.asOf, market: ctx.market, sectors: ctx.sectors || [] })));
+  // Which stocks to watch: Nifty 500, Nifty Total Market, or all NSE equities
+  app.post(
+    '/api/universe',
+    wrap((req) => {
+      const kind = ['nifty500', 'total', 'all'].includes(req.body?.kind) ? req.body.kind : 'nifty500';
+      ctx.updateSettings({ universe: kind });
+      ctx.bus.log('You', `You switched the stock list to ${UNIVERSES[kind].label}`, { level: 'info' });
+      if (ctx.demo) return { ok: true, note: 'Demo mode always uses its own simulated stocks.' };
+      if (!ctx.kiteSession.connected) return { ok: true, note: 'Saved — the new list is loaded at the next morning preparation after your Zerodha login.' };
+      ag().screener.forceUniverse = true;
+      ag()
+        .screener.prepare({ reason: 'new stock list' })
+        .then(() => ctx.day && (ctx.day.jobs.prep = 'done'))
+        .catch(() => {});
+      return { ok: true, note: kind === 'nifty500' ? 'Loading the Nifty 500 list now.' : 'Downloading the new stocks now — the first time takes about 10–15 minutes (1.5 years of daily data per stock). Watch the Agents page.' };
+    }),
+  );
   app.post(
     '/api/flags/refresh',
     wrap(async () => {

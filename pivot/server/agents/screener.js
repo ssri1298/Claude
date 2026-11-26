@@ -40,7 +40,8 @@ export class Screener {
     const started = Date.now();
     try {
       this.log(`Starting market preparation (${reason})`);
-      const uni = await feed.universe();
+      const uni = await feed.universe({ kind: this.ctx.settings.universe || 'nifty500', force: !!this.forceUniverse });
+      this.forceUniverse = false;
       db.tx(() => {
         for (const u of uni)
           db.run(

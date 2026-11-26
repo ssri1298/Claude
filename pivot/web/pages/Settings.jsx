@@ -48,7 +48,7 @@ export default function Settings({ query, section }) {
     const summary = {
       trading: `${s.tradingMode === 'live' ? 'Live money' : 'Paper'} · ${s.confirmTrades ? 'asks before buying' : 'fully automatic'}${s.agentsPaused ? ' · buys paused' : ''}`,
       capital: `${r.positionPct}% per trade · max ${r.maxPositions} positions`,
-      buying: `Score ≥ ${r.minScore} · volume ≥ ${r.minVolPace}× · ${c.enabled ? 'breakout checks on' : 'no breakout checks'}`,
+      buying: `${data.universeLabel || 'Nifty 500'} · score ≥ ${r.minScore} · volume ≥ ${r.minVolPace}× · ${c.enabled ? 'breakout checks on' : 'no breakout checks'}`,
       selling: `Stop ≤ ${r.maxStopPct}% · ⅓ at +${r.partialAtPct}% · ${{ ema21: '21-EMA trail', pct10: '10% trail', sma50: '50-DMA trail', none: 'no trail' }[r.trailMethod]}`,
       zerodha: data.kite?.connected ? 'Connected today' : data.secrets?.kiteApiKey ? 'Not logged in today' : 'Not set up',
       notifications: [data.push?.devices ? 'App' : null, data.telegram?.paired ? 'Telegram' : null].filter(Boolean).join(' + ') || 'Not set up',
@@ -134,6 +134,7 @@ export default function Settings({ query, section }) {
 
       {section === 'buying' && (
         <>
+          <UniverseGroup s={s} data={data} reload={reload} />
       <Group title="Entry rules">
         <Row icon={TrendingUp} iconTone="mint" title="Minimum setup score" subtitle="65 = grade B · 75 = A · 85 = A+" right={<NumberField value={r.minScore} onChange={rule('minScore')} width="w-20" />} />
         <Row title="Buy zone above pivot" subtitle="Never chase further than this" right={<NumberField value={r.buyZonePct} onChange={rule('buyZonePct')} suffix="%" step={0.5} width="w-20" />} />
@@ -166,7 +167,7 @@ export default function Settings({ query, section }) {
         <Row icon={Zap} iconTone="butter" title="Two-stage buy" right={<Toggle checked={r.twoStage.enabled} onChange={(v) => save({ rules: { twoStage: { enabled: v } } })} />} />
         {r.twoStage.enabled && <Row title="First part" right={<NumberField value={Math.round(r.twoStage.firstFraction * 100)} onChange={(v) => save({ rules: { twoStage: { firstFraction: Math.min(0.9, Math.max(0.1, v / 100)) } } })} suffix="%" width="w-20" />} />}
       </Group>
-      <Group title="Market filter" footer="Based on the Nifty 50 trend and how many Nifty 500 stocks are above their 50-day average.">
+      <Group title="Market filter" footer="Based on the Nifty 50 trend and how many of the watched stocks are above their 50-day average.">
         <Row icon={Activity} iconTone="butter" title="In a market correction">
           <Segmented size="sm" className="mt-2" value={s.marketFilter} onChange={(v) => save({ marketFilter: v })} options={[{ value: 'pause', label: 'Pause new buys' }, { value: 'half', label: 'Half size' }, { value: 'off', label: 'Ignore' }]} />
         </Row>
@@ -279,7 +280,7 @@ export default function Settings({ query, section }) {
           <AppUpdates />
           <WatchdogGroup s={s} save={save} />
       <Group title="Data">
-        <Row icon={Database} iconTone="sky" title="Stocks tracked" subtitle={`Nifty 500 list · history from ${data.historyFrom || '—'}`} right={<b className="num">{data.universeCount}</b>} />
+        <Row icon={Database} iconTone="sky" title="Stocks tracked" subtitle={`${data.universeLabel || 'Nifty 500'} list · history from ${data.historyFrom || '—'}`} right={<b className="num">{data.universeCount}</b>} />
         {!data.demo && <UploadNifty500 />}
         <ErasePaper />
         {data.demo && (
@@ -467,6 +468,50 @@ function WatchdogGroup({ s, save }) {
         />
       </Group>
     </>
+  );
+}
+
+/** Which stocks the agents watch and trade. */
+function UniverseGroup({ s, data, reload }) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+  const pick = async (kind) => {
+    if (kind === (s.universe || 'nifty500')) return;
+    setBusy(true);
+    setNote('');
+    try {
+      const r = await api('/universe', { method: 'POST', body: { kind } });
+      setNote(r.note || 'Saved');
+      reload();
+    } catch (e) {
+      setNote(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const kind = s.universe || 'nifty500';
+  const help = {
+    nifty500: 'The 500 biggest, most traded NSE companies — the cleanest list for VCP breakouts.',
+    total: 'Nifty 500 plus ~250 smaller companies (the Nifty Total Market index). More setups, slightly less liquid.',
+    all: 'Every NSE equity (~2,000, no ETFs, bonds or SME / trade-to-trade series). The most setups, but many small, thin stocks — keep the turnover filter on. Industries are known only for stocks in NSE index lists.',
+  }[kind];
+  return (
+    <Group title="Stocks to watch" footer={`${help} Morning preparation takes longer with more stocks (about 1 minute per 200 stocks after the first download). Changing the list keeps your trades and settings.`}>
+      <Row title="Watch and trade" subtitle={`${data.universeCount} stocks now`}>
+        <Segmented
+          size="sm"
+          className="mt-2"
+          value={kind}
+          onChange={pick}
+          options={[
+            { value: 'nifty500', label: 'Nifty 500' },
+            { value: 'total', label: 'Total Market' },
+            { value: 'all', label: 'All NSE' },
+          ]}
+        />
+        {(busy || note) && <div className="text-[14px] font-semibold mt-2">{busy ? 'Saving…' : note}</div>}
+      </Row>
+    </Group>
   );
 }
 
@@ -799,7 +844,7 @@ function UploadNifty500() {
     }
   };
   return (
-    <Row title="Upload the Nifty 500 list" subtitle="Only needed if NSE blocks your server. Download the CSV on your phone or computer, then upload it here.">
+    <Row title="Upload the stock list" subtitle="Only needed if NSE blocks your server. Download the CSV on your phone or computer, then upload it here.">
       <div className="flex flex-wrap items-center gap-2 mt-2">
         <a href="https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv" target="_blank" rel="noreferrer" className="text-accent font-semibold text-[15px]">
           1. Download from NSE

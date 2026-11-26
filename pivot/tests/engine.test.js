@@ -335,3 +335,37 @@ test('rule report card groups trades and suggests changes where a group loses', 
   assert.equal(sc.buckets.find((b) => b.label === '75–84 (A)').avgR, 3);
   assert.ok(rc.tips.some((t) => /minimum score to 75/.test(t.text)), JSON.stringify(rc.tips));
 });
+
+test('stock list: "all NSE" keeps plain equities only and fills industries it knows', async () => {
+  const { KiteFeed } = await import('../server/broker/feeds.js');
+  const { openDb } = await import('../server/core/db.js');
+  const db = openDb(':memory:');
+  db.run("INSERT INTO universe(symbol,name,industry,token,tick,active) VALUES('RELIANCE','Reliance Industries','Oil Gas & Consumable Fuels',738561,0.05,1)");
+  const inst = [
+    ['RELIANCE', 'RELIANCE INDUSTRIES', 738561],
+    ['TINYCO', 'TINY COMPANY', 111],
+    ['NIFTYBEES', 'NIP IND ETF NIFTY BEES', 222],
+    ['XYZ-BE', 'XYZ LTD', 333],
+    ['SMEFIRM-SM', 'SME FIRM', 444],
+    ['BAJAJ-AUTO', 'BAJAJ AUTO', 555],
+  ].map(([tradingsymbol, name, instrument_token]) => ({ segment: 'NSE', instrument_type: 'EQ', exchange: 'NSE', tradingsymbol, name, instrument_token, tick_size: 0.05 }));
+  const feed = new KiteFeed({ kite: { instruments: async () => inst }, db, quotes: new Map() });
+  const rows = await feed.universe({ kind: 'all' });
+  assert.deepEqual(rows.map((r) => r.symbol).sort(), ['BAJAJ-AUTO', 'RELIANCE', 'TINYCO']);
+  assert.equal(rows.find((r) => r.symbol === 'RELIANCE').industry, 'Oil Gas & Consumable Fuels');
+  assert.equal(rows.find((r) => r.symbol === 'TINYCO').industry, 'Unclassified');
+  assert.equal(db.kvGet('universeKind'), 'all');
+  // switching back to an index list refreshes even though the saved list is recent
+  const again = await feed.universe({ kind: 'all' });
+  assert.equal(again.length, 3);
+});
+
+test('unclassified stocks get no sector score instead of one giant fake sector', async () => {
+  const { prepareUniverse, analyzeUniverse } = await import('../server/engine/analyze.js');
+  const m = generateMarket({ seed: 3, stocks: 30, days: 400 });
+  m.stocks.slice(0, 10).forEach((s) => (s.industry = 'Unclassified'));
+  const res = analyzeUniverse(prepareUniverse(m.stocks), { indexCandles: m.index });
+  const un = res.stocks.filter((a) => a.industry === 'Unclassified');
+  assert.ok(un.length && un.every((a) => a.sectorRs === null));
+  assert.ok(!res.sectors.some((x) => x.industry === 'Unclassified'));
+});

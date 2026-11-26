@@ -36,8 +36,8 @@ export function agentPulse(ctx) {
   const sc = screener.status;
   const live = sc.live || {};
   let S;
-  if (sc.progress) S = { s: 'busy', task: `Downloading Nifty 500 data · ${sc.progress.done} of ${sc.progress.total}`, progress: sc.progress.total ? sc.progress.done / sc.progress.total : null };
-  else if (sc.state === 'preparing') S = { s: 'busy', task: 'Analysing the Nifty 500 — trend template, relative strength, VCP bases' };
+  if (sc.progress) S = { s: 'busy', task: `Downloading daily data · ${sc.progress.done} of ${sc.progress.total}`, progress: sc.progress.total ? sc.progress.done / sc.progress.total : null };
+  else if (sc.state === 'preparing') S = { s: 'busy', task: 'Analysing the market — trend template, relative strength, VCP bases' };
   else if (market && ready && day.jobs.prep === 'done') {
     const armed = day.armed?.size || 0;
     const bits = [`Scanned ${live.scanned ?? 0} stocks${sc.lastScan ? ' at ' + ist(new Date(sc.lastScan)).hhmm : ''}`];

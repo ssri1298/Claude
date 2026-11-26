@@ -48,6 +48,7 @@ export function analyzeUniverse(prepared, { indexCandles, date, vcpOptions } = {
   const byInd = new Map();
   for (const r of rows) {
     const k = r.s.industry || 'Other';
+    if (k === 'Unclassified') continue; // industry unknown (outside NSE's index lists)
     if (!byInd.has(k)) byInd.set(k, []);
     byInd.get(k).push(rsMap.get(r.s.symbol));
   }
@@ -71,7 +72,7 @@ export function analyzeUniverse(prepared, { indexCandles, date, vcpOptions } = {
       close: round(close),
       changePct: round((close / s.c.close[end - 1] - 1) * 100),
       rsRating,
-      sectorRs: indRank.get(s.industry || 'Other'),
+      sectorRs: s.industry === 'Unclassified' ? null : indRank.get(s.industry || 'Other') ?? null,
       trend,
       sma50: round(s.m.sma50[end]),
       sma150: round(s.m.sma150[end]),
@@ -126,6 +127,7 @@ export function sectorTable(stocks, indRank) {
   const g = new Map();
   for (const a of stocks) {
     const k = a.industry || 'Other';
+    if (k === 'Unclassified') continue;
     if (!g.has(k)) g.set(k, { industry: k, count: 0, rsSum: 0, uptrend: 0, above50: 0, setups: 0, top: [] });
     const x = g.get(k);
     x.count++;

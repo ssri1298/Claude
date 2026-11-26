@@ -119,7 +119,7 @@ export default function Today() {
           </div>
         ) : (
           <Card>
-            <Empty icon={Radar} title="No VCP setups right now" text="The Screener checks all Nifty 500 stocks every morning and minute. Patience is part of the strategy." />
+            <Empty icon={Radar} title="No VCP setups right now" text="The Screener checks every watched stock every morning and minute. Patience is part of the strategy." />
           </Card>
         )}
       </Section>
