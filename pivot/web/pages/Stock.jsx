@@ -51,7 +51,7 @@ export default function Stock({ symbol }) {
             { value: 'intraday', label: '15-minute' },
           ]}
         />
-        {chart === 'daily' ? <PriceChart candles={data.candles} vcp={v.valid ? v : v.pivot ? v : null} positions={data.positions} buyZonePct={data.buyZonePct} /> : <IntradayChart symbol={symbol} />}
+        {chart === 'daily' ? <PriceChart candles={data.candles} vcp={v.valid ? v : v.pivot ? v : null} positions={data.positions} buyZonePct={data.buyZonePct} symbol={symbol} /> : <IntradayChart symbol={symbol} />}
       </Card>
 
       <WhyNot symbol={symbol} />

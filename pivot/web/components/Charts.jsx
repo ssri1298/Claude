@@ -1,14 +1,16 @@
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell, ReferenceLine } from 'recharts';
 import { useIsDark, cssVar, inr, compactInr, niceDate, pct } from '../lib.js';
 import { Card, Stat } from './ui.jsx';
+import { paletteFor } from './chartTheme.js';
 
 function useChartColors() {
   const dark = useIsDark();
+  const P = paletteFor(dark);
   return {
     dark,
     line: cssVar('--chart-1') || '#2a78d6',
-    gain: cssVar('--chart-gain') || '#1baf7a',
-    loss: cssVar('--chart-loss') || '#e34948',
+    gain: P.gain,
+    loss: P.loss,
     grid: cssVar('--chart-grid') || 'rgba(0,0,0,.08)',
     axis: cssVar('--chart-axis') || '#8e8e93',
     surface: `rgb(${cssVar('--card')})`,
@@ -35,22 +37,39 @@ export function EquityChart({ data, height = 260, startValue }) {
   const vals = data.map((d) => d.equity);
   const min = Math.min(...vals),
     max = Math.max(...vals);
-  const pad = (max - min) * 0.1 || max * 0.02;
+  // Green while the account is above where it started, red when below (start always on the scale)
+  const base = startValue ?? vals[0];
+  const pad = (Math.max(max, base) - Math.min(min, base)) * 0.1 || max * 0.02;
+  const lo = Math.min(min, base) - pad;
+  const hi = Math.max(max, base) + pad;
+  // SVG gradients stretch over each shape's own box: the line spans min..max, the fill spans the line and the start value
+  const crosses = min < base && max > base;
+  const lineSplit = crosses ? (max - base) / (max - min) : 0;
+  const top = Math.max(max, base);
+  const bottom = Math.min(min, base);
+  const split = top > bottom ? (top - base) / (top - bottom) : 1;
+  const stroke = vals[vals.length - 1] >= base ? c.gain : c.loss;
   return (
     <ResponsiveContainer width="100%" height={height}>
       <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="eqfill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={c.line} stopOpacity={0.22} />
-            <stop offset="100%" stopColor={c.line} stopOpacity={0} />
+            <stop offset="0%" stopColor={c.gain} stopOpacity={0.45} />
+            <stop offset={split} stopColor={c.gain} stopOpacity={0.06} />
+            <stop offset={split} stopColor={c.loss} stopOpacity={0.06} />
+            <stop offset="100%" stopColor={c.loss} stopOpacity={0.45} />
+          </linearGradient>
+          <linearGradient id="eqline" x1="0" y1="0" x2="0" y2="1">
+            <stop offset={lineSplit} stopColor={c.gain} />
+            <stop offset={lineSplit} stopColor={c.loss} />
           </linearGradient>
         </defs>
         <CartesianGrid vertical={false} stroke={c.grid} />
         <XAxis dataKey="date" tickFormatter={niceDate} tick={{ fill: c.axis, fontSize: 12 }} axisLine={false} tickLine={false} minTickGap={50} />
-        <YAxis domain={[min - pad, max + pad]} tickFormatter={compactInr} tick={{ fill: c.axis, fontSize: 12 }} axisLine={false} tickLine={false} width={78} />
-        {startValue && <ReferenceLine y={startValue} stroke={c.axis} strokeDasharray="4 4" />}
+        <YAxis domain={[lo, hi]} tickFormatter={compactInr} tick={{ fill: c.axis, fontSize: 12 }} axisLine={false} tickLine={false} width={78} />
+        {startValue && <ReferenceLine y={startValue} stroke={c.axis} strokeDasharray="4 4" label={{ value: 'start', position: 'insideBottomLeft', fill: c.axis, fontSize: 11 }} />}
         <Tooltip content={<Tip fmt={(v) => inr(v)} labelFmt={niceDate} />} cursor={{ stroke: c.axis, strokeWidth: 1 }} />
-        <Area type="monotone" dataKey="equity" stroke={c.line} strokeWidth={2} fill="url(#eqfill)" activeDot={{ r: 5, stroke: c.surface, strokeWidth: 2 }} isAnimationActive={false} />
+        <Area type="monotone" dataKey="equity" baseValue={base} stroke={crosses ? 'url(#eqline)' : max > base ? c.gain : min < base ? c.loss : c.line} strokeWidth={2.5} fill="url(#eqfill)" activeDot={{ r: 6, fill: stroke, stroke: c.surface, strokeWidth: 2 }} isAnimationActive={false} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -68,7 +87,7 @@ export function MonthlyBars({ data, height = 220 }) {
         <YAxis tickFormatter={(v) => v + '%'} tick={{ fill: c.axis, fontSize: 12 }} axisLine={false} tickLine={false} width={44} />
         <ReferenceLine y={0} stroke={c.axis} />
         <Tooltip content={<Tip fmt={(v) => pct(v, 2)} />} cursor={{ fill: c.grid }} />
-        <Bar dataKey="returnPct" radius={[4, 4, 4, 4]} maxBarSize={28} isAnimationActive={false}>
+        <Bar dataKey="returnPct" radius={[5, 5, 5, 5]} maxBarSize={30} isAnimationActive={false}>
           {rows.map((r) => (
             <Cell key={r.month} fill={r.returnPct >= 0 ? c.gain : c.loss} />
           ))}
