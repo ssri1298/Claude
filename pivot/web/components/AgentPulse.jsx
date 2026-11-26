@@ -1,15 +1,15 @@
 // "Agents at work" — a live panel showing what each agent is doing right now.
 // Updates with every price push (every 2–3 seconds); the "ago" labels and countdowns tick every second.
-import { Crown, Radar, Sparkles, ShieldCheck } from 'lucide-react';
 import { go } from '../lib.js';
 import { useAgents, useBeat, useNow, toLocal, ago } from '../live.js';
 import { Card } from './ui.jsx';
+import AgentGlyph from './AgentGlyph.jsx';
 
 export const AGENTS = [
-  { key: 'parent', name: 'Parent', role: 'Runs the day', Icon: Crown, tile: 'bg-lav-soft text-lav', bar: 'text-lav bg-lav' },
-  { key: 'screener', name: 'Screener', role: 'Scans the market', Icon: Radar, tile: 'bg-sky-soft text-sky', bar: 'text-sky bg-sky' },
-  { key: 'analyst', name: 'Analyst', role: 'Rates breakouts', Icon: Sparkles, tile: 'bg-peach-soft text-peach', bar: 'text-peach bg-peach' },
-  { key: 'executor', name: 'Executor', role: 'Buys & guards trades', Icon: ShieldCheck, tile: 'bg-mint-soft text-mint', bar: 'text-mint bg-mint' },
+  { key: 'parent', name: 'Parent', role: 'Runs the day', tile: 'bg-lav-soft text-lav', bar: 'text-lav bg-lav', tone: '--lav' },
+  { key: 'screener', name: 'Screener', role: 'Scans the market', tile: 'bg-sky-soft text-sky', bar: 'text-sky bg-sky', tone: '--sky' },
+  { key: 'analyst', name: 'Analyst', role: 'Rates breakouts', tile: 'bg-peach-soft text-peach', bar: 'text-peach bg-peach', tone: '--peach' },
+  { key: 'executor', name: 'Executor', role: 'Buys & guards trades', tile: 'bg-mint-soft text-mint', bar: 'text-mint bg-mint', tone: '--mint' },
 ];
 
 const STATE = {
@@ -19,30 +19,17 @@ const STATE = {
   idle: ['Resting', 'bg-card2 text-ink3'],
 };
 
-/** Animated icon tile: a rotating sweep around it while the agent works, a soft pulse while on watch. */
+/** The agent's own animated icon on a soft tile; a gentle static glow while it is working. */
 export function AgentIcon({ agent, s, size = 44 }) {
-  const { Icon, tile } = agent;
-  const busy = s === 'busy';
+  const glow = s === 'busy' ? `0 0 0 2px rgb(var(${agent.tone}) / 0.35), 0 4px 14px -4px rgb(var(${agent.tone}) / 0.55)` : 'none';
   return (
-    <span className={`relative shrink-0 rounded-2xl overflow-hidden p-[2.5px] ${busy ? `agent-sweep ${tile.split(' ')[1]}` : ''}`} style={{ width: size, height: size }}>
-      <span className={`relative z-[1] h-full w-full rounded-[14px] flex items-center justify-center ${tile}`}>
-        <Icon size={size * 0.46} className={s === 'watching' ? 'breathe' : busy && agent.key === 'screener' ? 'radar-spin' : ''} />
-      </span>
+    <span className={`shrink-0 rounded-2xl flex items-center justify-center transition-shadow duration-500 ${agent.tile}`} style={{ width: size, height: size, boxShadow: glow }}>
+      <AgentGlyph kind={agent.key} s={s} size={Math.round(size * 0.68)} />
     </span>
   );
 }
 
-function Dots() {
-  return (
-    <span className="typing-dots" aria-hidden>
-      <span />
-      <span />
-      <span />
-    </span>
-  );
-}
-
-/** Thin bar under an agent: download progress, countdown to the next scan, or a shimmer while working. */
+/** Thin bar under an agent: download progress or the countdown to the next scan. */
 function ActivityBar({ p, agent, now }) {
   if (p.progress != null) {
     return (
@@ -63,7 +50,6 @@ function ActivityBar({ p, agent, now }) {
       </div>
     );
   }
-  if (p.s === 'busy') return <div className={`mt-2 h-1.5 rounded-full bg-card2 overflow-hidden relative shimmer ${agent.bar.split(' ')[0]}`} />;
   return null;
 }
 
@@ -81,7 +67,6 @@ function AgentRow({ agent, p, now, last }) {
         </div>
         <div key={p.task} className="fade-in text-[15px] text-ink2 leading-snug mt-0.5 break-words [overflow-wrap:anywhere]">
           {p.task}
-          {p.s === 'busy' && <Dots />}
         </div>
         {p.next && (
           <div className="text-[13px] text-ink3 mt-0.5">
@@ -163,7 +148,6 @@ export function ScanStatus() {
         <div className="flex-1 min-w-0">
           <div key={p.task} className="fade-in text-[15px] leading-snug">
             {p.task}
-            {p.s === 'busy' && <Dots />}
           </div>
           <ActivityBar p={p} agent={AGENTS[1]} now={now} />
         </div>

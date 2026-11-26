@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Crown, Radar, Sparkles, ShieldCheck, Check, X, KeyRound, Pause, Play, FastForward, Gauge, TrendingUp, TrendingDown, Activity , Timer, Gavel, ChevronRight } from 'lucide-react';
+import { Radar, ShieldCheck, Check, X, KeyRound, Pause, Play, FastForward, Gauge, TrendingUp, TrendingDown, Activity , Timer, Gavel, ChevronRight } from 'lucide-react';
 import { api, useApi, go, inr, price, pct, signed, tone, istTime, compactInr } from '../lib.js';
 import { Card, Section, Pill, GradeBadge, Button, Spinner, Empty, RiskBar, Segmented, Contractions, StageBadge, Delta , LivePrice, LiveDist, LiveStage, FlagBadges } from '../components/ui.jsx';
 import { useQuote, useFlash, useSymbols, useAllQuotes } from '../live.js';
 import AgentPulse from '../components/AgentPulse.jsx';
+import AgentGlyph from '../components/AgentGlyph.jsx';
 
 
 export default function Today() {
@@ -447,14 +448,15 @@ export function LinkedText({ text, symbols }) {
 }
 
 export function EventRow({ e }) {
-  const Icon = { You: Gavel, Parent: Crown, Screener: Radar, Analyst: Sparkles, Executor: ShieldCheck }[e.agent] || Activity;
+  const agentKind = ['Parent', 'Screener', 'Analyst', 'Executor'].includes(e.agent) ? e.agent.toLowerCase() : null;
+  const Icon = e.agent === 'You' ? Gavel : Activity;
   const symbols = useSymbols();
   const first = symbols && (e.message || '').match(SYMBOL_RE)?.find((m) => symbols.has(m));
   const open = first ? () => go(`/stock/${encodeURIComponent(first)}`) : undefined;
   return (
     <div onClick={open} className={`flex gap-3 px-4 sm:px-5 py-3.5 rise ${open ? 'cursor-pointer hover:bg-card2/60 active:bg-card2' : ''}`}>
       <span className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${AGENT_BG[e.agent] || 'bg-card2'}`}>
-        <Icon size={18} />
+        {agentKind ? <AgentGlyph kind={agentKind} s="idle" size={22} /> : <Icon size={18} />}
       </span>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline justify-between gap-2">
