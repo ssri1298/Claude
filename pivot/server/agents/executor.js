@@ -49,7 +49,7 @@ export class Executor {
     return q?.ltp || fallback;
   }
 
-  async capital(kind = this.mode) {
+  async capital(kind = this.mode, { cachedMs = 0 } = {}) {
     const { db, settings } = this.ctx;
     const open = this.openPositions(kind);
     const marketValue = open.reduce((s, p) => s + p.qty_open * this.ltpOf(p.symbol, p.last_price || p.entry_price), 0);
@@ -57,7 +57,7 @@ export class Executor {
     if (kind === 'live') {
       let cash = 0;
       try {
-        cash = (await this.ctx.liveBroker.funds()).cash;
+        cash = (await this.ctx.liveBroker.funds({ maxAgeMs: cachedMs })).cash;
       } catch (e) {
         this.log(`Could not read Kite funds: ${e.message}`, 'warn');
       }

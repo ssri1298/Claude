@@ -16,6 +16,7 @@ import { esc } from '../notify/telegram.js';
 import { buildMorning, buildEvening, saveReport, morningText, eveningText, buildPeriodReport, periodText } from './reports.js';
 import { periodEnds } from '../core/watchdog.js';
 import { checkAlerts } from '../core/alerts.js';
+import { pruneOldData } from '../core/db.js';
 
 const NAME = 'Parent';
 const inr = (x) => '₹' + Math.round(Number(x)).toLocaleString('en-IN');
@@ -156,6 +157,7 @@ export class Parent {
         await this.executor.snapshotEquity();
         await this.eveningReport();
         await this.periodReports(t.date);
+        pruneOldData(this.ctx.db.raw, this.ctx.clock.now());
         if (settings.backup?.daily !== false && this.ctx.watchdog) await this.ctx.watchdog.backup({ send: !!settings.backup?.telegram }).catch((e) => this.log(`Backup failed: ${e.message}`, 'warn'));
       })()
         .then(() => (day.jobs.post = 'done'))

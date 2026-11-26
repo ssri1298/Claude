@@ -1,22 +1,57 @@
-import { useEffect, useState } from 'react';
-import { Sun, Radar, Briefcase, BarChart3, FlaskConical, Bot, Settings as SettingsIcon, MoreHorizontal, Diamond, Gavel, Newspaper, Bell } from 'lucide-react';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { Sun, Radar, Briefcase, BarChart3, Bot, Settings as SettingsIcon, MoreHorizontal, Diamond, Gavel, Newspaper, Bell } from 'lucide-react';
 import { api, useRoute, go, connectStream, disconnectStream, price } from './lib.js';
 import { startLive, useIndex, usePhase, useFlash } from './live.js';
 import { Spinner } from './components/ui.jsx';
 import { AgentDots } from './components/AgentPulse.jsx';
 import Login from './pages/Login.jsx';
 import Today from './pages/Today.jsx';
-import Scanner from './pages/Scanner.jsx';
-import Stock from './pages/Stock.jsx';
-import Trades from './pages/Trades.jsx';
-import Stats from './pages/Stats.jsx';
-import Backtest from './pages/Backtest.jsx';
-import Agents from './pages/Agents.jsx';
-import Settings from './pages/Settings.jsx';
-import More from './pages/More.jsx';
-import Overrule from './pages/Overrule.jsx';
-import Reports from './pages/Reports.jsx';
-import AlertsPage from './pages/AlertsPage.jsx';
+
+// Every other page loads on demand, so the first screen appears quickly.
+// Once the app is idle they are fetched in the background, so tapping a tab is still instant.
+const PAGES = {
+  Scanner: () => import('./pages/Scanner.jsx'),
+  Stock: () => import('./pages/Stock.jsx'),
+  Trades: () => import('./pages/Trades.jsx'),
+  Stats: () => import('./pages/Stats.jsx'),
+  Agents: () => import('./pages/Agents.jsx'),
+  Settings: () => import('./pages/Settings.jsx'),
+  More: () => import('./pages/More.jsx'),
+  Overrule: () => import('./pages/Overrule.jsx'),
+  Reports: () => import('./pages/Reports.jsx'),
+  AlertsPage: () => import('./pages/AlertsPage.jsx'),
+};
+const Scanner = page(PAGES.Scanner);
+const Stock = page(PAGES.Stock);
+const Trades = page(PAGES.Trades);
+const Stats = page(PAGES.Stats);
+const Agents = page(PAGES.Agents);
+const Settings = page(PAGES.Settings);
+const More = page(PAGES.More);
+const Overrule = page(PAGES.Overrule);
+const Reports = page(PAGES.Reports);
+const AlertsPage = page(PAGES.AlertsPage);
+// After an app update the old page files are gone; reload once to pick up the new ones.
+function page(load) {
+  return lazy(() =>
+    load().catch((e) => {
+      if (!sessionStorage.getItem('pivot-reloaded')) {
+        sessionStorage.setItem('pivot-reloaded', '1');
+        location.reload();
+        return new Promise(() => {});
+      }
+      throw e;
+    }),
+  );
+}
+function prefetchPages() {
+  const idle = window.requestIdleCallback || ((f) => setTimeout(f, 1500));
+  idle(() =>
+    Promise.all(Object.values(PAGES).map((load) => load()))
+      .then(() => sessionStorage.removeItem('pivot-reloaded'))
+      .catch(() => {}),
+  );
+}
 
 const NAV = [
   { path: '/', label: 'Today', icon: Sun },
@@ -24,7 +59,6 @@ const NAV = [
   { path: '/trades', label: 'Trades', icon: Briefcase },
   { path: '/stats', label: 'Dashboard', icon: BarChart3 },
   { path: '/reports', label: 'Reports', icon: Newspaper },
-  { path: '/backtest', label: 'Backtest', icon: FlaskConical },
   { path: '/agents', label: 'Agents', icon: Bot },
   { path: '/overrule', label: 'Overrule', icon: Gavel },
   { path: '/alerts', label: 'Alerts', icon: Bell },
@@ -50,6 +84,7 @@ export default function App() {
     if (auth?.loggedIn) {
       connectStream();
       startLive();
+      prefetchPages();
     }
     else disconnectStream();
   }, [auth?.loggedIn]);
@@ -72,9 +107,6 @@ export default function App() {
     case '/stats':
       page = <Stats />;
       break;
-    case '/backtest':
-      page = <Backtest />;
-      break;
     case '/agents':
       page = <Agents />;
       break;
@@ -96,7 +128,7 @@ export default function App() {
     default:
       page = <Today />;
   }
-  const isActive = (p) => (p === '/' ? top === '/' : top === p || (p === '/scanner' && top === '/stock') || (p === '/more' && ['/reports', '/backtest', '/agents', '/overrule', '/alerts', '/settings'].includes(top)));
+  const isActive = (p) => (p === '/' ? top === '/' : top === p || (p === '/scanner' && top === '/stock') || (p === '/more' && ['/reports', '/agents', '/overrule', '/alerts', '/settings'].includes(top)));
 
   return (
     <div className="min-h-screen lg:flex">
@@ -128,7 +160,9 @@ export default function App() {
 
       <main className="flex-1 min-w-0">
         <NiftyBar />
-        <div className="mx-auto max-w-[1180px] px-4 sm:px-6 lg:px-10 pt-3 pb-32 lg:pb-12 overflow-x-clip">{page}</div>
+        <div className="mx-auto max-w-[1180px] px-4 sm:px-6 lg:px-10 pt-3 pb-32 lg:pb-12 overflow-x-clip">
+          <Suspense fallback={<Spinner className="pt-24" />}>{page}</Suspense>
+        </div>
       </main>
 
       {/* Mobile tab bar */}

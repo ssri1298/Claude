@@ -1,5 +1,5 @@
 // Full-universe analysis: RS ratings → trend template → VCP → score.
-// Used by the Screener agent (live) and the Backtester (historical, bar by bar).
+// Used by the Screener agent.
 
 import { columns, mean } from './indicators.js';
 import { detectVCP, trendTemplate, rsRawScore, rankPercentiles, movingAverages, rsLine, round } from './vcp.js';

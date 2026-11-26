@@ -1,7 +1,7 @@
 import { go } from '../lib.js';
 import { LargeTitle, List, Row } from '../components/ui.jsx';
 
-const SUB = { '/alerts': 'Notifications when a stock reaches your price', '/reports': 'Morning brief and evening report for every day', '/backtest': 'Test the rules on years of history', '/agents': 'What each agent is doing, daily routine, log', '/overrule': 'Buy what the agents skipped, keep positions longer, block stocks', '/settings': 'Trading, capital, buying & selling rules, Zerodha, notifications, app' };
+const SUB = { '/alerts': 'Notifications when a stock reaches your price', '/reports': 'Morning brief and evening report for every day', '/agents': 'What each agent is doing, daily routine, log', '/overrule': 'Buy what the agents skipped, keep positions longer, block stocks', '/settings': 'Trading, capital, buying & selling rules, Zerodha, notifications, app' };
 const TONES = ['butter', 'peach', 'sky', 'coral', 'mint', 'lav'];
 
 export default function More({ nav }) {

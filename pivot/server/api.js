@@ -1,6 +1,5 @@
 // HTTP API used by the web app.
 
-import { Worker } from 'node:worker_threads';
 import { randomInt } from 'node:crypto';
 import { ist, tradingDaysBetween, MARKET } from './core/time.js';
 import { saveSecrets, maskSecrets } from './core/settings.js';
@@ -114,7 +113,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
       const ex = ag().executor;
       const kind = ex.mode;
       const t = ist(ctx.clock.now());
-      const capital = await ex.capital(kind);
+      const capital = await ex.capital(kind, { cachedMs: 30000 });
       const open = positionsView(ctx, db.all("SELECT * FROM positions WHERE kind = ? AND status = 'open' ORDER BY entry_ts DESC", kind));
       const todayClosed = db.all('SELECT realized FROM positions WHERE kind = ? AND exit_date = ?', kind, t.date);
       const todayFills = db.all("SELECT f.side, f.qty, f.price, f.charges, p.entry_price FROM fills f JOIN positions p ON p.id = f.position_id WHERE p.kind = ? AND f.ts >= ?", kind, ctx.clock.now().toISOString().slice(0, 10));
@@ -449,14 +448,6 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
       return { ok: true };
     }),
   );
-  app.post(
-    '/api/agents/history',
-    wrap((req) => {
-      if (!ctx.demo && !ctx.kiteSession.connected) throw Object.assign(new Error('Log in to Kite first'), { status: 400 });
-      ag().screener.extendHistory(Number(req.body?.years) || 5);
-      return { ok: true };
-    }),
-  );
 
   // ------------------------------------------------------------ settings
   app.get(
@@ -472,7 +463,7 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
       flags: { updated: ctx.flags?.updated || null, problems: ctx.flags?.problems || [], results: Object.keys(ctx.flags?.results || {}).length, surveillance: Object.keys(ctx.flags?.surveillance || {}).length, bands: Object.keys(ctx.flags?.bands || {}).length },
       universeCount: db.get('SELECT COUNT(*) AS n FROM universe WHERE active = 1').n,
       universeLabel: universeLabel(ctx.settings.universe),
-      historyFrom: db.get('SELECT MIN(date) AS d FROM candles').d,
+      historyFrom: db.get('SELECT MIN(date) AS d FROM candles WHERE token = ?', ctx.demo ? 256265 : NIFTY50_TOKEN).d,
       holidayNames: db.kvGet('holidayNames', {}),
       holidaySync: db.kvGet('holidaySync'),
       demo: ctx.demo,
@@ -567,100 +558,6 @@ export function mountApi(app, ctx, auth, { dbFile, dataDir }) {
       db.kvSet('universeFetchedAt', 0);
       ctx.bus.log('Screener', `You uploaded a Nifty 500 list with ${rows.length} stocks — it will be used from the next scan`, { level: 'success' });
       return { ok: true, count: rows.length };
-    }),
-  );
-
-  // ------------------------------------------------------------ backtests
-  const jobs = new Map();
-  const indexToken = ctx.demo ? 256265 : NIFTY50_TOKEN;
-  const runWorker = (mode, params, job, phaseFrom, phaseTo) =>
-    new Promise((resolve, reject) => {
-      const w = new Worker(new URL('./engine/backtestWorker.js', import.meta.url), {
-        workerData: { dbFile, params, indexToken, mode },
-        execArgv: ['--disable-warning=ExperimentalWarning'],
-      });
-      w.on('message', (m) => {
-        if (m.type === 'progress') {
-          job.progress = phaseFrom + (phaseTo - phaseFrom) * m.progress;
-          ctx.bus.push('backtest', { id: job.id, status: job.status, progress: job.progress, phase: job.phase });
-        } else if (m.type === 'done') resolve(m.result);
-        else if (m.type === 'error') reject(new Error(m.error));
-      });
-      w.on('error', reject);
-    });
-
-  /** Download (and cache) the 15-minute candles a backtest needs. */
-  async function ensure15(ranges, job) {
-    if (!ctx.demo && !ctx.kiteSession.connected) throw new Error('Log in to Kite first — 15-minute candles come from Zerodha');
-    const lastDay = ist(ctx.clock.now()).date;
-    const todo = ranges.filter((r) => !db.get('SELECT 1 FROM candles15_ranges WHERE token = ? AND from_date <= ? AND to_date >= ?', r.token, r.from, r.to < lastDay ? r.to : lastDay));
-    job.download = { needed: todo.length, done: 0, cached: ranges.length - todo.length, failed: 0 };
-    for (const r of todo) {
-      try {
-        const bars = await ctx.feed.history15(r.token, r.from, r.to);
-        db.tx(() => {
-          for (const b of bars) db.run('INSERT OR REPLACE INTO candles15(token,date,time,open,high,low,close,volume) VALUES(?,?,?,?,?,?,?,?)', r.token, b.date, b.time, b.open, b.high, b.low, b.close, b.volume);
-          db.run('INSERT INTO candles15_ranges(token, from_date, to_date, fetched) VALUES(?,?,?,?)', r.token, r.from, r.to, new Date().toISOString());
-        });
-      } catch (e) {
-        if (e.type === 'TokenException') throw new Error('Kite session expired — log in again and re-run');
-        job.download.failed++;
-      }
-      job.download.done++;
-      job.progress = 0.3 + 0.4 * (job.download.done / Math.max(1, todo.length));
-      ctx.bus.push('backtest', { id: job.id, status: job.status, progress: job.progress, phase: job.phase, download: job.download });
-    }
-  }
-
-  app.post(
-    '/api/backtest',
-    wrap((req) => {
-      if ([...jobs.values()].some((j) => j.status === 'running')) throw Object.assign(new Error('A backtest is already running'), { status: 400 });
-      const id = String(Date.now());
-      const precision = req.body.precision === '15m' ? '15m' : 'daily';
-      const params = {
-        from: req.body.from || null,
-        to: req.body.to || null,
-        capital: Number(req.body.capital) || ctx.settings.paperCapital,
-        rules: { ...ctx.settings.rules, ...(req.body.rules || {}) },
-        marketFilter: req.body.marketFilter || ctx.settings.marketFilter,
-        compounding: req.body.compounding !== false,
-        precision,
-      };
-      const job = { id, status: 'running', progress: 0, params, phase: precision === '15m' ? 'scan' : 'daily' };
-      jobs.set(id, job);
-      (async () => {
-        let result;
-        if (precision === 'daily') result = await runWorker('daily', params, job, 0, 1);
-        else {
-          const scan = await runWorker('scan', params, job, 0, 0.3);
-          job.scan = { candidateDays: scan.candidateDays, ranges: scan.ranges.length };
-          job.phase = 'download';
-          await ensure15(scan.ranges, job);
-          job.phase = 'replay';
-          result = await runWorker('run15', params, job, 0.7, 1);
-        }
-        job.status = 'done';
-        job.progress = 1;
-        job.result = slimBacktest(result);
-        db.kvSet('lastBacktest', job);
-        ctx.bus.log('Analyst', `Backtest (${precision === '15m' ? '15-minute candles' : 'daily candles'}) finished: ${job.result.stats.trades} trades, win rate ${job.result.stats.winRate}%, return ${job.result.stats.totalReturnPct}%`, { level: 'success' });
-      })()
-        .catch((e) => {
-          job.status = 'error';
-          job.error = e.message;
-        })
-        .finally(() => ctx.bus.push('backtest', { id, status: job.status, progress: job.progress, phase: job.phase }));
-      return { id };
-    }),
-  );
-  app.get(
-    '/api/backtest/:id',
-    wrap((req) => {
-      if (req.params.id === 'last') return db.kvGet('lastBacktest') || null;
-      const j = jobs.get(req.params.id);
-      if (!j) throw Object.assign(new Error('Not found'), { status: 404 });
-      return j;
     }),
   );
 
@@ -1053,33 +950,3 @@ function tradeView(ctx, r) {
   };
 }
 
-function slimBacktest(r) {
-  const eq = r.equity;
-  const step = Math.max(1, Math.floor(eq.length / 400));
-  return {
-    params: r.params,
-    stats: r.stats,
-    signals: r.signals,
-    coverage: r.coverage || null,
-    monteCarlo: r.monteCarlo || null,
-    periods: r.periods || null,
-    equity: eq.filter((_, i) => i % step === 0 || i === eq.length - 1),
-    trades: r.trades.slice(0, 300).map((t) => ({
-      symbol: t.symbol,
-      entryDate: t.entryDate,
-      exitDate: t.exitDate,
-      entryTime: t.entryTime,
-      exitTime: t.exitTime,
-      entryPrice: t.entryPrice,
-      exitPrice: t.exitPrice,
-      realized: Math.round(t.realized),
-      pct: round((t.realized / (t.entryPrice * t.qtyInitial)) * 100),
-      r: t.rMultiple,
-      reason: t.exitReason,
-      grade: t.grade,
-      reentry: t.isReentry,
-      days: t.holdDays,
-    })),
-    openAtEnd: r.openAtEnd,
-  };
-}

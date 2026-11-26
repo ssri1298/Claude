@@ -31,8 +31,11 @@ export async function startServer({ port = Number(process.env.PORT) || 8080, dem
   mountApi(app, ctx, auth, { dbFile, dataDir });
   const dist = join(root, 'dist');
   if (existsSync(dist)) {
-    app.use(express.static(dist, { index: false, maxAge: '1h' }));
-    app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(join(dist, 'index.html')));
+    // Files in /assets have a content hash in their name, so the phone can keep them for a year;
+    // index.html and the service worker are always re-checked so app updates show up at once.
+    app.use('/assets', express.static(join(dist, 'assets'), { index: false, immutable: true, maxAge: '365d', fallthrough: false }));
+    app.use(express.static(dist, { index: false, maxAge: '1h', setHeaders: (res, path) => /(index\.html|sw\.js)$/.test(path) && res.setHeader('Cache-Control', 'no-cache') }));
+    app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(join(dist, 'index.html'), { headers: { 'Cache-Control': 'no-cache' } }));
   }
   const server = await new Promise((resolve) => {
     const s = app.listen(port, process.env.HOST || '127.0.0.1', () => resolve(s));

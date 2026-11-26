@@ -5,7 +5,6 @@ import { detectVCP, trendTemplate, movingAverages, rankPercentiles } from '../se
 import { computeStop, positionSize, managePosition, deliveryCharges, DEFAULT_RULES, capacityCheck } from '../server/engine/rules.js';
 import { computeStats } from '../server/engine/stats.js';
 import { volumePace, volumeFraction } from '../server/engine/market.js';
-import { runBacktest } from '../server/engine/backtest.js';
 import { generateMarket } from '../server/demo/synth.js';
 import { tradingDates } from '../server/demo/synth.js';
 import { scoreSetup } from '../server/engine/scoring.js';
@@ -157,49 +156,6 @@ test('stats: win rate, profit factor, drawdown', () => {
   assert.equal(s.rDistribution[0].count, 1);
 });
 
-test('backtest runs end-to-end on a synthetic market', () => {
-  const m = generateMarket({ seed: 3, stocks: 60, days: 520 });
-  const r = runBacktest({ stocks: m.stocks, index: m.index, from: m.dates[260] });
-  assert.ok(r.equity.length > 200);
-  assert.ok(r.stats.trades >= 1, 'should take at least one trade');
-  for (const t of r.trades) {
-    assert.ok(t.rMultiple > -1.6, `loss limited by the stop (got ${t.rMultiple}R)`);
-    assert.ok(t.qtyInitial * t.entryPrice <= 500000 * 0.11 * (1 + r.stats.totalReturnPct / 100) + 1000, 'position ≈ 10% of capital');
-  }
-});
-
-test('15-minute backtest replays candle by candle with no look-ahead', async () => {
-  const { findBreakoutDays, runBacktest15 } = await import('../server/engine/backtest15.js');
-  const { bars15FromDaily } = await import('../server/demo/demoFeed.js');
-  const { rng } = await import('../server/demo/synth.js');
-  const m = generateMarket({ seed: 3, stocks: 60, days: 520 });
-  const from = m.dates[260];
-  const scan = findBreakoutDays({ stocks: m.stocks, index: m.index, from });
-  assert.ok(scan.candidateDays > 0 && scan.ranges.length > 0);
-  const byTok = new Map(m.stocks.map((s) => [s.token, s]));
-  const getBars = (token, date) => {
-    if (!scan.ranges.some((r) => r.token === token && date >= r.from && date <= r.to)) return [];
-    const di = m.dates.indexOf(date);
-    return bars15FromDaily(byTok.get(token).candles[di], rng(token * 7919 + di));
-  };
-  const r = runBacktest15({ stocks: m.stocks, index: m.index, from, getBars });
-  assert.ok(r.stats.trades >= 1);
-  assert.equal(r.coverage.entryPct, 100, 'every breakout day had 15-minute candles');
-  for (const t of r.trades) {
-    assert.match(t.entryTime, /^\d\d:\d\d$/);
-    // the buy is the close of a candle that closed above the pivot (plus slippage)
-    const bars = getBars(byTok.get(m.stocks.find((s) => s.symbol === t.symbol).token) && m.stocks.find((s) => s.symbol === t.symbol).token, t.entryDate);
-    const bar = bars.find((b) => b.time === t.entryTime);
-    assert.ok(bar && bar.close > t.pivot, 'entry candle closed above the pivot');
-    assert.ok(Math.abs(t.fills[0].price - bar.close * 1.001) < 0.06, 'first buy filled at that candle close');
-    const adds = t.fills.filter((f) => f.reason === 'second part');
-    for (const f of adds) assert.equal(f.time, '15:00', 'second part bought on the 15:00–15:15 candle close');
-    if (t.exitReason === 'failed') assert.ok(t.exitPrice < t.pivot, 'failed-breakout exit only below the pivot');
-    assert.ok(t.rMultiple > -1.6, `loss limited by the stop (${t.rMultiple}R)`);
-    if (t.exitDate === t.entryDate) assert.ok(t.exitTime > t.entryTime, 'same-day exit happens after the entry candle');
-  }
-});
-
 test('confirmation checks: VWAP, range position, gap rule, candle hold', () => {
   const base = { ltp: 101, pivot: 100, dayOpen: 99, dayHigh: 101.5, dayLow: 98, vwap: 100, orHigh: 100.2, lastBar: { c: 100.8, bucket: 3 }, armedBucket: 3, minutes: 60, volPace: 2 };
   assert.equal(evaluateChecks(base).confirmed, true);
@@ -225,17 +181,6 @@ test('NSE holiday list: bundled 2026 dates are weekdays and NSE dates parse', as
   assert.equal(parseNseDate('26-Jan-2026'), '2026-01-26');
   assert.equal(parseNseDate('3-Mar-2026'), '2026-03-03');
   assert.equal(parseNseDate('bad'), null);
-});
-
-test('backtest time exit uses the chosen number of days', () => {
-  const m = generateMarket({ seed: 7, stocks: 120, days: 700 });
-  for (const days of [2, 5]) {
-    const r = runBacktest({ stocks: m.stocks, index: m.index, from: m.dates[260], rules: { confirm: { enabled: false }, twoStage: { enabled: false }, failedExit: { enabled: false }, timeExit: { enabled: true, days } } });
-    const te = r.trades.filter((t) => t.exitReason === 'time');
-    assert.ok(te.length > 0, `some trades left by the time exit (${days} days)`);
-    for (const t of te) assert.equal(t.holdDays, days);
-    assert.equal(r.params.rules.timeExit.days, days);
-  }
 });
 
 test('agents panel: next scheduled job', async () => {
@@ -305,23 +250,6 @@ test('distribution days: falls of 0.2%+ on heavier total volume, counted over 25
   assert.ok(m.distDays >= 5, `distribution days ${m.distDays}`);
   assert.ok(m.notes.some((n) => /distribution days/.test(n)));
   assert.equal(marketRegime(idx, { above50Pct: 65 }).distDays, null, 'no volume → fallback');
-});
-
-test('backtest: compounding switch, Monte Carlo ranges and results by period', () => {
-  const market = generateMarket({ seed: 42, stocks: 40, days: 700 });
-  const dates = tradingDates(market);
-  const base = { stocks: market.stocks, index: market.index, from: dates[300], capital: 500000, rules: { confirm: { enabled: false } } };
-  const on = runBacktest(base);
-  const off = runBacktest({ ...base, compounding: false });
-  assert.equal(on.params.compounding, true);
-  assert.equal(off.params.compounding, false);
-  assert.ok(on.periods.periods.length >= 1);
-  assert.ok(typeof on.periods.verdict === 'string');
-  if (on.stats.trades >= 10) {
-    assert.ok(on.monteCarlo.runs > 0);
-    assert.ok(on.monteCarlo.returnPct.p5 <= on.monteCarlo.returnPct.p50 && on.monteCarlo.returnPct.p50 <= on.monteCarlo.returnPct.p95);
-    assert.ok(on.monteCarlo.maxDrawdownPct.p95 >= on.monteCarlo.maxDrawdownPct.p50);
-  }
 });
 
 test('rule report card groups trades and suggests changes where a group loses', async () => {

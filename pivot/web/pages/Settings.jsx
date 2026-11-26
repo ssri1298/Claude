@@ -141,7 +141,7 @@ export default function Settings({ query, section }) {
         <Row title="Breakout volume" subtitle="Projected volume vs 50-day average" right={<NumberField value={r.minVolPace} onChange={rule('minVolPace')} suffix="×" step={0.1} width="w-20" />} />
       </Group>
 
-      <Group title="Stock filters" footer="Checked before every buy. Results dates and surveillance lists come from NSE, circuit bands from Zerodha — refreshed every morning and evening. The backtest can only apply the turnover filter (no history for the others).">
+      <Group title="Stock filters" footer="Checked before every buy. Results dates and surveillance lists come from NSE, circuit bands from Zerodha — refreshed every morning and evening.">
         <Row icon={CalendarOff} iconTone="butter" title="Skip stocks with results coming up" subtitle="One bad result can gap a stock straight through its stop" right={<Toggle checked={!!r.filters?.results?.enabled} onChange={(v) => save({ rules: { filters: { results: { enabled: v } } } })} />} />
         {r.filters?.results?.enabled && <Row title="No new buys within" right={<NumberField value={r.filters.results.daysBefore} onChange={(v) => save({ rules: { filters: { results: { daysBefore: Math.max(0, Math.min(20, v)) } } } })} suffix="days before" width="w-20" />} />}
         <Row title="Skip ASM / GSM stocks" subtitle="NSE surveillance lists — extra margins, trading limits, unreliable breakouts" right={<Toggle checked={!!r.filters?.surveillance} onChange={(v) => save({ rules: { filters: { surveillance: v } } })} />} />

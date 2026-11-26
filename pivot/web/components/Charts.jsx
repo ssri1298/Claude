@@ -98,7 +98,7 @@ export function RBars({ data, height = 200 }) {
   );
 }
 
-/** The KPI grid + charts used by both the Dashboard and the Backtester. */
+/** The KPI grid + charts on the Dashboard. */
 export function StatsBlock({ s, equity, startValue }) {
   const tone = (x) => (x > 0 ? 'text-mint' : x < 0 ? 'text-coral' : '');
   return (

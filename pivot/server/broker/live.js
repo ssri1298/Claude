@@ -10,13 +10,18 @@ export class LiveBroker {
     this.log = log;
   }
 
-  async funds() {
+  /** Cash at Zerodha. `maxAgeMs` lets screens reuse a recent answer; buying decisions always ask afresh. */
+  async funds({ maxAgeMs = 0 } = {}) {
+    if (maxAgeMs && this._funds && Date.now() - this._funds.at < maxAgeMs) return this._funds.value;
     const m = await this.kite.margins();
-    return { cash: Number(m?.available?.live_balance ?? m?.net ?? 0), net: Number(m?.net ?? 0) };
+    const value = { cash: Number(m?.available?.live_balance ?? m?.net ?? 0), net: Number(m?.net ?? 0) };
+    this._funds = { at: Date.now(), value };
+    return value;
   }
 
   /** Marketable LIMIT order; waits for the fill and re-prices if needed. */
   async execute({ symbol, side, qty, price, tick = 0.05, getLtp, maxWaitSec = side === 'BUY' ? 90 : 120, tag = 'pivot', limitCap }) {
+    this._funds = null;
     const placed = await this.kite.placeOrder({
       tradingsymbol: symbol,
       transaction_type: side,

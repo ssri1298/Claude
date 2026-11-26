@@ -108,6 +108,7 @@ export function openDb(file) {
       db.exec(sql);
     } catch {}
   }
+  if (file !== ':memory:' && !/demo/.test(file)) pruneOldData(db);
   const stmtCache = new Map();
   const prep = (sql) => {
     let s = stmtCache.get(sql);
@@ -162,4 +163,28 @@ function norm(v) {
   if (typeof v === 'boolean') return v ? 1 : 0;
   if (v !== null && typeof v === 'object') return JSON.stringify(v);
   return v;
+}
+
+/**
+ * Keep the database lean: drop data nothing reads any more.
+ *   daily candles   older than ~2.2 years (the scan uses ~1.7 years)
+ *   15-min candles  older than 120 days (intraday chart only)
+ *   activity log    older than 90 days
+ * The first run after the backtester was removed also clears its caches and compacts the file.
+ */
+export function pruneOldData(raw, now = new Date()) {
+  const day = (n) => new Date(now.getTime() - n * 86400000).toISOString().slice(0, 10);
+  try {
+    raw.prepare('DELETE FROM candles WHERE date < ?').run(day(800));
+    raw.prepare('DELETE FROM candles15 WHERE date < ?').run(day(120));
+    raw.prepare('DELETE FROM events WHERE ts < ?').run(day(90));
+    const done = raw.prepare("SELECT value FROM kv WHERE key = 'cleanup'").get();
+    if (!done) {
+      raw.exec("DELETE FROM candles15_ranges; DELETE FROM kv WHERE key IN ('lastBacktest');");
+      raw.prepare("INSERT OR REPLACE INTO kv(key, value) VALUES('cleanup', '1')").run();
+      raw.exec('VACUUM');
+    }
+  } catch (e) {
+    console.warn('Database tidy-up skipped:', e.message);
+  }
 }

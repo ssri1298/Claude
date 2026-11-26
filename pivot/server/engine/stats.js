@@ -1,4 +1,4 @@
-// Trading performance statistics (used by the dashboard and the backtester).
+// Trading performance statistics (used by the dashboard and reports).
 
 import { round } from './vcp.js';
 

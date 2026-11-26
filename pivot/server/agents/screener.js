@@ -118,43 +118,6 @@ export class Screener {
     }
   }
 
-  /** Download older daily candles (for backtesting). Runs in the background. */
-  async extendHistory(years = 5) {
-    const { db, feed, bus } = this.ctx;
-    if (this.status.extending) return;
-    this.status.extending = true;
-    try {
-      const uni = db.all('SELECT * FROM universe WHERE active = 1');
-      const target = addDays(this.dataUntil(), -Math.round(years * 365));
-      const idxToken = feed.kind === 'demo' ? 256265 : NIFTY50_TOKEN;
-      const list = [{ token: idxToken, symbol: 'NIFTY 50', index: true }, ...uni];
-      let done = 0;
-      this.log(`Downloading up to ${years} years of history for ${list.length} instruments — this takes a few minutes`);
-      for (const u of list) {
-        const first = db.get('SELECT MIN(date) AS d FROM candles WHERE token = ?', u.token)?.d;
-        if (first && first > target) {
-          // Kite allows ~2000 days of daily candles per request
-          const to = addDays(first, -1);
-          try {
-            const candles = u.index ? await feed.indexHistory(target, to) : await feed.history(u.token, target, to);
-            db.tx(() => {
-              for (const c of candles) db.run('INSERT OR IGNORE INTO candles(token,date,open,high,low,close,volume) VALUES(?,?,?,?,?,?,?)', u.token, c.date, c.open, c.high, c.low, c.close, c.volume);
-            });
-          } catch (e) {
-            if (e.type === 'TokenException') throw e;
-          }
-        }
-        done++;
-        if (done % 25 === 0) bus.push('progress', { agent: NAME, task: 'history', done, total: list.length });
-      }
-      this.log('Long history download complete — the backtester can now test several years', 'success');
-    } catch (e) {
-      this.log(`History download stopped: ${e.message}`, 'error');
-    } finally {
-      this.status.extending = false;
-    }
-  }
-
   /** One row per stock per day: the score and its parts, for the score-history charts. */
   saveScores(stocks, date) {
     const { db } = this.ctx;

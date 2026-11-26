@@ -183,8 +183,6 @@ Badges on the Scanner and stock pages show these, and the stock page says when a
 
 **Rule report card** (Dashboard). Your closed trades are grouped by score, market, sector, stop size, volume and base depth, with suggestions where a group loses money.
 
-**Backtest.** Switch compounding on or off, choose how trades are sized, and read the *Luck check* (Monte Carlo) and *Results by period*. Plan for the "bad drawdown" figure.
-
 **Watchdog and backups** (Settings → App & data):
 1. Create a free check at healthchecks.io (period 1 minute, grace 3 minutes).
 2. Paste its ping URL into Pivot. If the server stops, healthchecks.io alerts you.
@@ -209,8 +207,7 @@ Badges on the Scanner and stock pages show these, and the stock page says when a
 ## Going live (when you're ready)
 
 1. Paper-trade for at least 3–4 weeks. On the **Dashboard**, check the win rate, average win vs average loss, and whether grade A/A+ trades beat grade B.
-2. Run a **Backtest**: first tap **Get 5 years of data** and wait a few minutes. Then choose **15-minute candles** and tap **Run backtest**. The first run downloads 15-minute candles from Zerodha for every breakout, which takes a few minutes per year tested. Later runs reuse them and are quick. The 15-minute replay checks every candle, so it knows whether the stop or the +10% target came first in a day.
-3. **Settings → Trading → Trading mode → Live.** Keep **Ask me before every buy** on. Later, if you want fully automatic trading, switch that off.
+2. **Settings → Trading → Trading mode → Live.** Keep **Ask me before every buy** on. Later, if you want fully automatic trading, switch that off.
 
 ## If something goes wrong
 
